@@ -1,6 +1,5 @@
 package io.jenkins.plugins.gerritchangequery.rest;
 
-
 public class RerunAction extends Action {
   public static final String NAME = "Rerun";
   public static final String TOOLTIP = "Run the build for the patchset again.";

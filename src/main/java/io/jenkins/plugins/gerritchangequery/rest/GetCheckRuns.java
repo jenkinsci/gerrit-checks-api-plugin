@@ -11,6 +11,7 @@ import org.kohsuke.stapler.verb.GET;
 
 @Extension
 public class GetCheckRuns implements RootAction {
+  private final CheckRunCollector checkRunCollector = new CheckRunCollector();
 
   @Override
   public String getIconFileName() {
@@ -32,6 +33,6 @@ public class GetCheckRuns implements RootAction {
   public JsonHttpResponse getCheckRuns(
       @QueryParameter(required = true) int change, @QueryParameter(required = true) int patchset) {
     return new JsonHttpResponse(
-        JSONObject.fromObject(CheckRunCollector.collectFor(change, patchset)), 200);
+        JSONObject.fromObject(checkRunCollector.collectFor(change, patchset)), 200);
   }
 }

@@ -1,12 +1,5 @@
 package io.jenkins.plugins.gerritchangequery.rest;
 
-import hudson.model.Job;
-import hudson.model.Result;
-import hudson.model.Run;
-import io.jenkins.plugins.gerritchangequery.rest.CheckResult.Category;
-import io.jenkins.plugins.gerritchangequery.rest.Link.LinkIcon;
-import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
 
 public class CheckRun {
@@ -26,116 +19,6 @@ public class CheckRun {
   private String startedTimestamp;
   private String finishedTimestamp;
   private List<CheckResult> results;
-
-  public static class Factory {
-    public enum JobType {
-      GERRIT_TRIGGER,
-      GERRIT_MULTI_BRANCH
-    }
-
-    @SuppressWarnings("deprecation")
-    public static CheckRun create(int change, int patchset, JobType jobType, Job job, Run run) {
-      CheckRun checkRun = new CheckRun();
-
-      checkRun.setChange(change);
-      checkRun.setPatchSet(patchset);
-
-      // Only true for gerritcodereview plugin
-      // TODO(Thomas): Fix for gerrit-trigger plugin
-      checkRun.setAttempt(run.getNumber());
-      checkRun.setExternalId(run.getExternalizableId());
-      checkRun.setCheckName(job.getDisplayName());
-      checkRun.setCheckDescription(job.getDescription());
-      checkRun.setCheckLink(run.getAbsoluteUrl());
-      checkRun.setStatus(computeStatus(run));
-      checkRun.setStatusDescription(run.getBuildStatusSummary().message);
-      checkRun.setStatusLink(run.getAbsoluteUrl());
-      // TODO(Thomas): labelName. Info might be present in the gerrit plugins
-      checkRun.setLabelName(null);
-      checkRun.setActions(computeActions(jobType, job));
-      checkRun.setScheduledTimestamp(run.getTime().toInstant().toString());
-      checkRun.setStartedTimestamp(Instant.ofEpochMilli(run.getStartTimeInMillis()).toString());
-      checkRun.setFinishedTimestamp(computeFinishedTimeStamp(run));
-      checkRun.setResults(computeCheckResults(run));
-      return checkRun;
-    }
-
-    // TODO(Thomas): Add RUNNABLE status
-    private static RunStatus computeStatus(Run run) {
-      if (run.hasntStartedYet()) {
-        return RunStatus.SCHEDULED;
-      }
-      if (run.isBuilding()) {
-        return RunStatus.RUNNING;
-      }
-      return RunStatus.COMPLETED;
-    }
-
-    private static String computeFinishedTimeStamp(Run run) {
-      if (run.hasntStartedYet() || run.isBuilding()) {
-        return null;
-      }
-      return Instant.ofEpochMilli(run.getStartTimeInMillis())
-          .plusMillis(run.getDuration())
-          .toString();
-    }
-
-    // Currently only a single result can be returned. Having multiple results per build might
-    // require introducing additional functionality to Jenkins
-    private static List<CheckResult> computeCheckResults(Run run) {
-      List<CheckResult> results = new ArrayList<CheckResult>();
-      if (run.hasntStartedYet() || run.isBuilding()) {
-        return results;
-      }
-      CheckResult result = new CheckResult();
-      result.setExternalId(run.getExternalizableId());
-      result.setCategory(computeCategory(run));
-      result.setLinks(computeResultLinks(run));
-      results.add(result);
-      return results;
-    }
-
-    private static Category computeCategory(Run run) {
-      Result res = run.getResult();
-      switch (res.toString()) {
-        case ("SUCCESS"):
-          return Category.SUCCESS;
-        case ("UNSTABLE"):
-          return Category.WARNING;
-        case ("FAILURE"):
-          return Category.ERROR;
-        default:
-          return Category.INFO;
-      }
-    }
-
-    @SuppressWarnings("deprecation")
-    private static List<Link> computeResultLinks(Run run) {
-      List<Link> links = new ArrayList<>();
-      Link consoleLogLink = new Link();
-      consoleLogLink.setUrl(String.format("%sconsole", run.getAbsoluteUrl()));
-      consoleLogLink.setTooltip("Build log.");
-      consoleLogLink.setIcon(LinkIcon.CODE);
-      consoleLogLink.setPrimary(true);
-      links.add(consoleLogLink);
-      return links;
-    }
-
-    private static List<Action> computeActions(JobType jobType, Job job) {
-      List<Action> actions = new ArrayList<>();
-      switch (jobType) {
-        case GERRIT_TRIGGER:
-          actions.add(new GerritTriggerRerunAction(job.getAbsoluteUrl()));
-          break;
-        case GERRIT_MULTI_BRANCH:
-          actions.add(new GerritMultiBranchRerunAction(job.getAbsoluteUrl()));
-          break;
-        default:
-          throw new IllegalStateException(String.format("Unknown job type: %s", jobType));
-      }
-      return actions;
-    }
-  }
 
   public CheckRun() {}
 
