@@ -1,6 +1,7 @@
 package io.jenkins.plugins.gerritchangequery.rest;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 
 public class CheckRuns {
@@ -14,6 +15,10 @@ public class CheckRuns {
 
   public boolean addRun(CheckRun run) {
     return runs.add(run);
+  }
+
+  public boolean addRuns(Collection<CheckRun> runs) {
+    return this.runs.addAll(runs);
   }
 
   public List<CheckRun> getRuns() {
