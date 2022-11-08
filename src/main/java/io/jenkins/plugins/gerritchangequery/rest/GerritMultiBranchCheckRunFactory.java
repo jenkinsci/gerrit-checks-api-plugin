@@ -25,7 +25,7 @@ public class GerritMultiBranchCheckRunFactory extends AbstractCheckRunFactory {
     checkRun.setStatusLink(getAbsoluteRunUrl(run));
     // TODO(Thomas): labelName. Info might be present in the gerrit plugins
     checkRun.setLabelName(null);
-    checkRun.setActions(computeActions(job));
+    checkRun.setActions(computeActions(run));
     checkRun.setScheduledTimestamp(run.getTime().toInstant().toString());
     checkRun.setStartedTimestamp(Instant.ofEpochMilli(run.getStartTimeInMillis()).toString());
     checkRun.setFinishedTimestamp(computeFinishedTimeStamp(run));
@@ -34,9 +34,9 @@ public class GerritMultiBranchCheckRunFactory extends AbstractCheckRunFactory {
   }
 
   @Override
-  protected List<Action> computeActions(Job<?, ?> job) {
+  protected List<Action> computeActions(Run<?, ?> run) {
     List<Action> actions = new ArrayList<>();
-    actions.add(new GerritMultiBranchRerunAction(job.getAbsoluteUrl()));
+    actions.add(new GerritMultiBranchRerunAction(run.getParent().getAbsoluteUrl()));
     return actions;
   }
 }

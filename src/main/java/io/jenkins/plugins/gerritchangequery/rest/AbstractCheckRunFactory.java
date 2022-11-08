@@ -17,7 +17,7 @@ public abstract class AbstractCheckRunFactory {
   public abstract CheckRun create(
       int change, int patchset, Job<?, ?> job, Run<?, ?> run, int attempt);
 
-  protected abstract List<Action> computeActions(Job<?, ?> job);
+  protected abstract List<Action> computeActions(Run<?, ?> run);
 
   // TODO(Thomas): Add RUNNABLE status
   protected static RunStatus computeStatus(Run<?, ?> run) {
