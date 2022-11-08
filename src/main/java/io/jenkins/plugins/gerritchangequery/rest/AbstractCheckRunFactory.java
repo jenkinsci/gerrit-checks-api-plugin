@@ -1,7 +1,6 @@
 package io.jenkins.plugins.gerritchangequery.rest;
 
 import hudson.model.Job;
-import hudson.model.Result;
 import hudson.model.Run;
 import io.jenkins.plugins.gerritchangequery.rest.CheckResult.Category;
 import io.jenkins.plugins.gerritchangequery.rest.CheckRun.RunStatus;
@@ -48,24 +47,10 @@ public abstract class AbstractCheckRunFactory {
     }
     CheckResult result = new CheckResult();
     result.setExternalId(run.getExternalizableId());
-    result.setCategory(computeCategory(run));
+    result.setCategory(Category.fromResult(run.getResult()));
     result.setLinks(computeResultLinks(run));
     results.add(result);
     return results;
-  }
-
-  private static Category computeCategory(Run<?, ?> run) {
-    Result res = run.getResult();
-    switch (res.toString()) {
-      case "SUCCESS":
-        return Category.SUCCESS;
-      case "UNSTABLE":
-        return Category.WARNING;
-      case "FAILURE":
-        return Category.ERROR;
-      default:
-        return Category.INFO;
-    }
   }
 
   private List<Link> computeResultLinks(Run<?, ?> run) {

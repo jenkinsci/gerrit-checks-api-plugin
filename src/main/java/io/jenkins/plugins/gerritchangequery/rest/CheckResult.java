@@ -1,5 +1,6 @@
 package io.jenkins.plugins.gerritchangequery.rest;
 
+import hudson.model.Result;
 import java.util.List;
 
 public class CheckResult {
@@ -112,6 +113,19 @@ public class CheckResult {
     SUCCESS,
     INFO,
     WARNING,
-    ERROR
+    ERROR;
+
+    public static Category fromResult(Result res) {
+      switch (res.toString()) {
+        case "SUCCESS":
+          return SUCCESS;
+        case "UNSTABLE":
+          return WARNING;
+        case "FAILURE":
+          return ERROR;
+        default:
+          return INFO;
+      }
+    }
   }
 }
