@@ -14,6 +14,9 @@
 
 package io.jenkins.plugins.gerritchangequery;
 
+import com.github.benmanes.caffeine.cache.CacheLoader;
+import com.github.benmanes.caffeine.cache.Caffeine;
+import com.github.benmanes.caffeine.cache.LoadingCache;
 import com.google.gerrit.extensions.restapi.Url;
 import hudson.model.Job;
 import hudson.model.Run;
@@ -24,6 +27,7 @@ import io.jenkins.plugins.gerritchangequery.rest.GerritTriggerCheckRunFactory;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import jenkins.model.Jenkins;
 import org.jenkinsci.plugins.lucene.search.databackend.SearchBackendManager;
@@ -36,8 +40,29 @@ public class CheckRunCollector {
   private final Jenkins jenkins = Jenkins.get();
   private final SearchBackendManager manager =
       jenkins.getExtensionList(SearchBackendManager.class).get(0);
+  private final LoadingCache<String, CheckRuns> cache =
+      Caffeine.newBuilder()
+          .expireAfterWrite(30, TimeUnit.SECONDS)
+          .build(
+              new CacheLoader<String, CheckRuns>() {
+                @Override
+                public CheckRuns load(String ref) {
+                  return collectAll(ref);
+                }
+              });
 
   public CheckRuns collectFor(int change, int patchset) {
+    return cache.get(convertToRef(change, patchset));
+  }
+
+  private CheckRuns collectAll(String ref) {
+    String[] refParts = ref.split("/");
+    return collectAll(
+        Integer.valueOf(refParts[refParts.length - 2]),
+        Integer.valueOf(refParts[refParts.length - 1]));
+  }
+
+  private CheckRuns collectAll(int change, int patchset) {
     CheckRuns checkRuns = new CheckRuns();
     checkRuns.addRuns(collectGerritTriggerRuns(change, patchset));
     checkRuns.addRuns(collectGerritMultiBranchRuns(change, patchset));
