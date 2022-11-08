@@ -3,7 +3,6 @@ package io.jenkins.plugins.gerritchangequery;
 import com.google.gerrit.extensions.restapi.Url;
 import hudson.model.Job;
 import hudson.model.Run;
-import hudson.search.Search;
 import io.jenkins.plugins.gerritchangequery.rest.CheckRun;
 import io.jenkins.plugins.gerritchangequery.rest.CheckRuns;
 import io.jenkins.plugins.gerritchangequery.rest.GerritMultiBranchCheckRunFactory;
@@ -11,14 +10,11 @@ import io.jenkins.plugins.gerritchangequery.rest.GerritTriggerCheckRunFactory;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import jenkins.model.Jenkins;
 import org.jenkinsci.plugins.lucene.search.databackend.SearchBackendManager;
 
 public class CheckRunCollector {
-  private static final Logger LOGGER = Logger.getLogger(Search.class.getName());
-
   private final GerritTriggerCheckRunFactory gerritTriggerCheckRunFactory =
       new GerritTriggerCheckRunFactory();
   private final GerritMultiBranchCheckRunFactory gerritMultiBranchCheckRunFactory =
