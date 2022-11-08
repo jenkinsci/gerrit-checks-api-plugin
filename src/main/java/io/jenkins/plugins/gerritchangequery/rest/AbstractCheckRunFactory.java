@@ -57,11 +57,11 @@ public abstract class AbstractCheckRunFactory {
   private static Category computeCategory(Run<?, ?> run) {
     Result res = run.getResult();
     switch (res.toString()) {
-      case ("SUCCESS"):
+      case "SUCCESS":
         return Category.SUCCESS;
-      case ("UNSTABLE"):
+      case "UNSTABLE":
         return Category.WARNING;
-      case ("FAILURE"):
+      case "FAILURE":
         return Category.ERROR;
       default:
         return Category.INFO;
