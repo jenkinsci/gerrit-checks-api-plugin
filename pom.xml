@@ -8,7 +8,7 @@
 		<relativePath />
 	</parent>
 	<groupId>io.jenkins.plugins</groupId>
-	<artifactId>gerrit-change-query</artifactId>
+	<artifactId>gerritchangequery</artifactId>
 	<version>${revision}${changelist}</version>
 	<packaging>hpi</packaging>
 	<name>Gerrit Change Query</name>
