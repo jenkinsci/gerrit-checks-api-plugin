@@ -11,7 +11,7 @@
 	<artifactId>gerrit-checks-api</artifactId>
 	<version>${revision}${changelist}</version>
 	<packaging>hpi</packaging>
-	<name>Gerrit Change Query</name>
+	<name>Gerrit Checks API</name>
 	<url>https://github.com/jenkinsci/${project.artifactId}-plugin</url>
 	<licenses>
 		<license>

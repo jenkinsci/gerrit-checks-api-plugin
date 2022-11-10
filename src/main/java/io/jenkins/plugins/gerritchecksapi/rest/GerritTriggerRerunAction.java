@@ -12,20 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package io.jenkins.plugins.gerritchangequery.rest;
+package io.jenkins.plugins.gerritchecksapi.rest;
 
-public class RerunAction extends Action {
-  public static final String NAME = "Rerun";
-  public static final String TOOLTIP = "Run the build for the patchset again.";
-  public static final boolean PRIMARY = true;
-  public static final boolean SUMMARY = false;
-  public static final String METHOD = "POST";
+public class GerritTriggerRerunAction extends RerunAction {
+  public static final String PATH = "gerrit-trigger-retrigger-this";
 
-  protected RerunAction() {
-    super(NAME, TOOLTIP, PRIMARY, SUMMARY, METHOD);
-  }
-
-  protected RerunAction(boolean disabled, String url) {
-    super(NAME, TOOLTIP, PRIMARY, SUMMARY, METHOD, disabled, url, null);
+  protected GerritTriggerRerunAction(String runUrl) {
+    super(false, String.format("%s%s", runUrl, PATH));
   }
 }

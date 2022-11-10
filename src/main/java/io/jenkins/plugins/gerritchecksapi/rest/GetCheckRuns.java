@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package io.jenkins.plugins.gerritchangequery.rest;
+package io.jenkins.plugins.gerritchecksapi.rest;
 
 import hudson.Extension;
 import hudson.model.RootAction;
-import io.jenkins.plugins.gerritchangequery.CheckRunCollector;
+import io.jenkins.plugins.gerritchecksapi.CheckRunCollector;
 import net.sf.json.JSONObject;
 import org.kohsuke.stapler.QueryParameter;
 import org.kohsuke.stapler.WebMethod;

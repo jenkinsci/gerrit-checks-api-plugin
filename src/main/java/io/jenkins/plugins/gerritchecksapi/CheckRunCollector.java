@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package io.jenkins.plugins.gerritchangequery;
+package io.jenkins.plugins.gerritchecksapi;
 
 import com.github.benmanes.caffeine.cache.CacheLoader;
 import com.github.benmanes.caffeine.cache.Caffeine;
@@ -20,10 +20,11 @@ import com.github.benmanes.caffeine.cache.LoadingCache;
 import com.google.gerrit.extensions.restapi.Url;
 import hudson.model.Job;
 import hudson.model.Run;
-import io.jenkins.plugins.gerritchangequery.rest.CheckRun;
-import io.jenkins.plugins.gerritchangequery.rest.CheckRuns;
-import io.jenkins.plugins.gerritchangequery.rest.GerritMultiBranchCheckRunFactory;
-import io.jenkins.plugins.gerritchangequery.rest.GerritTriggerCheckRunFactory;
+import io.jenkins.plugins.gerritchecksapi.rest.CheckRun;
+import io.jenkins.plugins.gerritchecksapi.rest.CheckRuns;
+import io.jenkins.plugins.gerritchecksapi.rest.GerritMultiBranchCheckRunFactory;
+import io.jenkins.plugins.gerritchecksapi.rest.GerritTriggerCheckRunFactory;
+
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;

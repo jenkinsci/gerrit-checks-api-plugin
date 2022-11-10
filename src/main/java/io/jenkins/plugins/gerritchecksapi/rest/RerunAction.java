@@ -12,34 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package io.jenkins.plugins.gerritchangequery.rest;
+package io.jenkins.plugins.gerritchecksapi.rest;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
+public class RerunAction extends Action {
+  public static final String NAME = "Rerun";
+  public static final String TOOLTIP = "Run the build for the patchset again.";
+  public static final boolean PRIMARY = true;
+  public static final boolean SUMMARY = false;
+  public static final String METHOD = "POST";
 
-public class CheckRuns {
-  private List<CheckRun> runs = new ArrayList<>();
-
-  public CheckRuns() {}
-
-  public CheckRuns(List<CheckRun> runs) {
-    this.runs = runs;
+  protected RerunAction() {
+    super(NAME, TOOLTIP, PRIMARY, SUMMARY, METHOD);
   }
 
-  public boolean addRun(CheckRun run) {
-    return runs.add(run);
-  }
-
-  public boolean addRuns(Collection<CheckRun> runs) {
-    return this.runs.addAll(runs);
-  }
-
-  public List<CheckRun> getRuns() {
-    return runs;
-  }
-
-  public void setRuns(List<CheckRun> runs) {
-    this.runs = runs;
+  protected RerunAction(boolean disabled, String url) {
+    super(NAME, TOOLTIP, PRIMARY, SUMMARY, METHOD, disabled, url, null);
   }
 }

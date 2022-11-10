@@ -12,13 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package io.jenkins.plugins.gerritchangequery.rest;
+package io.jenkins.plugins.gerritchecksapi.rest;
 
 import hudson.model.Job;
 import hudson.model.Run;
-import io.jenkins.plugins.gerritchangequery.rest.CheckResult.Category;
-import io.jenkins.plugins.gerritchangequery.rest.CheckRun.RunStatus;
-import io.jenkins.plugins.gerritchangequery.rest.Link.LinkIcon;
+import io.jenkins.plugins.gerritchecksapi.rest.CheckResult.Category;
+import io.jenkins.plugins.gerritchecksapi.rest.CheckRun.RunStatus;
+import io.jenkins.plugins.gerritchecksapi.rest.Link.LinkIcon;
+
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;

@@ -12,12 +12,34 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package io.jenkins.plugins.gerritchangequery.rest;
+package io.jenkins.plugins.gerritchecksapi.rest;
 
-public class GerritMultiBranchRerunAction extends RerunAction {
-  public static final String PATH = "build";
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
 
-  protected GerritMultiBranchRerunAction(String jobUrl) {
-    super(false, String.format("%s%s", jobUrl, PATH));
+public class CheckRuns {
+  private List<CheckRun> runs = new ArrayList<>();
+
+  public CheckRuns() {}
+
+  public CheckRuns(List<CheckRun> runs) {
+    this.runs = runs;
+  }
+
+  public boolean addRun(CheckRun run) {
+    return runs.add(run);
+  }
+
+  public boolean addRuns(Collection<CheckRun> runs) {
+    return this.runs.addAll(runs);
+  }
+
+  public List<CheckRun> getRuns() {
+    return runs;
+  }
+
+  public void setRuns(List<CheckRun> runs) {
+    this.runs = runs;
   }
 }
