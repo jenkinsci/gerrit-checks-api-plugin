@@ -15,8 +15,9 @@
 	<url>https://github.com/jenkinsci/${project.artifactId}-plugin</url>
 	<licenses>
 		<license>
-			<name>MIT License</name>
-			<url>https://opensource.org/licenses/MIT</url>
+			<name>Apache 2.0</name>
+			<url>https://www.apache.org/licenses/LICENSE-2.0</url>
+			<distribution>repo</distribution>
 		</license>
 	</licenses>
 	<!-- If you want this to appear on the plugin site page:
