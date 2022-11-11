@@ -85,11 +85,13 @@
 			<groupId>org.jenkins-ci.plugins</groupId>
 			<artifactId>gerrit-code-review</artifactId>
 			<version>0.4.7</version>
+			<optional>true</optional>
 		</dependency>
 		<dependency>
 			<groupId>com.sonyericsson.hudson.plugins.gerrit</groupId>
 			<artifactId>gerrit-trigger</artifactId>
 			<version>2.36.0</version>
+			<optional>true</optional>
 		</dependency>
 		<dependency>
 			<groupId>org.jenkins-ci.plugins</groupId>

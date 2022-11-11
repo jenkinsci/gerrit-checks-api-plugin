@@ -65,8 +65,12 @@ public class CheckRunCollector {
 
   private CheckRuns collectAll(int change, int patchset) {
     CheckRuns checkRuns = new CheckRuns();
-    checkRuns.addRuns(collectGerritTriggerRuns(change, patchset));
-    checkRuns.addRuns(collectGerritMultiBranchRuns(change, patchset));
+    if (jenkins.getPlugin("gerrit-trigger") != null) {
+      checkRuns.addRuns(collectGerritTriggerRuns(change, patchset));
+    }
+    if (jenkins.getPlugin("gerrit-code-review") != null) {
+      checkRuns.addRuns(collectGerritMultiBranchRuns(change, patchset));
+    }
     return checkRuns;
   }
 
