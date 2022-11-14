@@ -94,7 +94,7 @@
 		<dependency>
 			<groupId>org.jenkins-ci.plugins</groupId>
 			<artifactId>lucene-search</artifactId>
-			<version>370.v62a5f618cd3a</version>
+			<version>9999-SNAPSHOT</version>
 		</dependency>
 	</dependencies>
 
