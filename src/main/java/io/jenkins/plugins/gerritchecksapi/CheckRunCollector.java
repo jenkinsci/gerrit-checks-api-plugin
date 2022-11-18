@@ -58,8 +58,8 @@ public class CheckRunCollector {
   private CheckRuns collectAll(String ref) {
     String[] refParts = ref.split("/");
     return collectAll(
-        Integer.valueOf(refParts[refParts.length - 2]),
-        Integer.valueOf(refParts[refParts.length - 1]));
+        Integer.parseInt(refParts[refParts.length - 2]),
+        Integer.parseInt(refParts[refParts.length - 1]));
   }
 
   private CheckRuns collectAll(int change, int patchset) {

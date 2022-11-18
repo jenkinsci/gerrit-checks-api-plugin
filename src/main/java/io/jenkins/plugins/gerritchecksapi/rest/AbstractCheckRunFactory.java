@@ -15,6 +15,7 @@
 package io.jenkins.plugins.gerritchecksapi.rest;
 
 import hudson.model.Job;
+import hudson.model.Result;
 import hudson.model.Run;
 import io.jenkins.plugins.gerritchecksapi.rest.CheckResult.Category;
 import io.jenkins.plugins.gerritchecksapi.rest.CheckRun.RunStatus;
@@ -61,7 +62,10 @@ public abstract class AbstractCheckRunFactory {
     }
     CheckResult result = new CheckResult();
     result.setExternalId(run.getExternalizableId());
-    result.setCategory(Category.fromResult(run.getResult()));
+    Result res = run.getResult();
+    if (res != null) {
+      result.setCategory(Category.fromResult(res));
+    }
     result.setLinks(computeResultLinks(run));
     results.add(result);
     return results;
