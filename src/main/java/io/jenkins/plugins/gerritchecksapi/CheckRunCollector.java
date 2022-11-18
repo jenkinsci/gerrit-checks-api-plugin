@@ -24,7 +24,6 @@ import io.jenkins.plugins.gerritchecksapi.rest.CheckRun;
 import io.jenkins.plugins.gerritchecksapi.rest.CheckRuns;
 import io.jenkins.plugins.gerritchecksapi.rest.GerritMultiBranchCheckRunFactory;
 import io.jenkins.plugins.gerritchecksapi.rest.GerritTriggerCheckRunFactory;
-
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;

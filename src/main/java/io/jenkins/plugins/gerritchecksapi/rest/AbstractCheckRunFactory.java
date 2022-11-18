@@ -19,7 +19,6 @@ import hudson.model.Run;
 import io.jenkins.plugins.gerritchecksapi.rest.CheckResult.Category;
 import io.jenkins.plugins.gerritchecksapi.rest.CheckRun.RunStatus;
 import io.jenkins.plugins.gerritchecksapi.rest.Link.LinkIcon;
-
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
