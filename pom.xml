@@ -20,13 +20,13 @@
 			<distribution>repo</distribution>
 		</license>
 	</licenses>
-    <developers>
-        <developer>
-            <id>tdraebing</id>
-            <name>Thomas Draebing</name>
-            <email>thomas.draebing@gmail.com</email>
-        </developer>
-    </developers>
+	<developers>
+		<developer>
+			<id>tdraebing</id>
+			<name>Thomas Draebing</name>
+			<email>thomas.draebing@gmail.com</email>
+		</developer>
+	</developers>
 
 	<scm child.scm.connection.inherit.append.path="false" child.scm.developerConnection.inherit.append.path="false" child.scm.url.inherit.append.path="false">
 		<connection>scm:git:https://github.com/${gitHubRepo}</connection>
