@@ -1,4 +1,6 @@
 <?jelly escape-by-default='true'?>
 <div>
-    TODO
+    This plugin allows to query for Runs working on <a href="https://gerritcodereview.com/">Gerrit</a>
+    patchsets. It supports Jobs using the gerrit-trigger plugin or the
+    gerrit-code-review plugin.
 </div>
