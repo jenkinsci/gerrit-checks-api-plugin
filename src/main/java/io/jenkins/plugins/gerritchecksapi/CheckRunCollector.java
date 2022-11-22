@@ -18,101 +18,137 @@ import com.github.benmanes.caffeine.cache.CacheLoader;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.LoadingCache;
 import com.google.gerrit.extensions.restapi.Url;
+import com.google.inject.Inject;
+
 import hudson.model.Job;
 import hudson.model.Run;
+import hudson.security.ACL;
+import hudson.security.ACLContext;
+import hudson.security.AuthorizationStrategy;
 import io.jenkins.plugins.gerritchecksapi.rest.CheckRun;
 import io.jenkins.plugins.gerritchecksapi.rest.CheckRuns;
 import io.jenkins.plugins.gerritchecksapi.rest.GerritMultiBranchCheckRunFactory;
 import io.jenkins.plugins.gerritchecksapi.rest.GerritTriggerCheckRunFactory;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import jenkins.model.Jenkins;
 import org.jenkinsci.plugins.lucene.search.databackend.SearchBackendManager;
 
 public class CheckRunCollector {
+  private static final Jenkins jenkins = Jenkins.get();
+  private final SearchBackendManager manager =
+      jenkins.getExtensionList(SearchBackendManager.class).get(0);
   private final GerritTriggerCheckRunFactory gerritTriggerCheckRunFactory =
       new GerritTriggerCheckRunFactory();
   private final GerritMultiBranchCheckRunFactory gerritMultiBranchCheckRunFactory =
       new GerritMultiBranchCheckRunFactory();
-  private final Jenkins jenkins = Jenkins.get();
-  private final SearchBackendManager manager =
-      jenkins.getExtensionList(SearchBackendManager.class).get(0);
-  private final LoadingCache<String, CheckRuns> cache =
+  private final LoadingCache<String, Map<Job<?, ?>, List<CheckRun>>> cache =
       Caffeine.newBuilder()
           .expireAfterWrite(30, TimeUnit.SECONDS)
           .build(
-              new CacheLoader<String, CheckRuns>() {
+              new CacheLoader<String, Map<Job<?, ?>, List<CheckRun>>>() {
                 @Override
-                public CheckRuns load(String ref) {
+                public Map<Job<?, ?>, List<CheckRun>> load(String ref) {
                   return collectAll(ref);
                 }
               });
 
   public CheckRuns collectFor(int change, int patchset) {
-    return cache.get(convertToRef(change, patchset));
+    CheckRuns result = new CheckRuns();
+    Map<Job<?, ?>, List<CheckRun>> runs = cache.get(convertToRef(change, patchset));
+    for (Map.Entry<Job<?, ?>, List<CheckRun>> entry : runs.entrySet()) {
+      if (jenkins.getAuthorizationStrategy().getACL(entry.getKey()).hasPermission(Job.READ)) {
+        result.addRuns(entry.getValue());
+      }
+    }
+    return result;
   }
 
-  private CheckRuns collectAll(String ref) {
+  private Map<Job<?, ?>, List<CheckRun>> collectAll(String ref) {
     String[] refParts = ref.split("/");
     return collectAll(
         Integer.parseInt(refParts[refParts.length - 2]),
         Integer.parseInt(refParts[refParts.length - 1]));
   }
 
-  private CheckRuns collectAll(int change, int patchset) {
-    CheckRuns checkRuns = new CheckRuns();
+  private Map<Job<?, ?>, List<CheckRun>> collectAll(int change, int patchset) {
+    Map<Job<?, ?>, List<CheckRun>> checkRuns = new HashMap<>();
     if (jenkins.getPlugin("gerrit-trigger") != null) {
-      checkRuns.addRuns(collectGerritTriggerRuns(change, patchset));
+      checkRuns.putAll(collectGerritTriggerRuns(change, patchset));
     }
     if (jenkins.getPlugin("gerrit-code-review") != null) {
-      checkRuns.addRuns(collectGerritMultiBranchRuns(change, patchset));
+      checkRuns.putAll(collectGerritMultiBranchRuns(change, patchset));
     }
     return checkRuns;
   }
 
   @SuppressWarnings("rawtypes")
-  private List<CheckRun> collectGerritTriggerRuns(int change, int patchset) {
-    List<CheckRun> checkRuns = new ArrayList<>();
-    List<Run> hits =
-        manager
-            .getHits(String.format("p:\"refs/changes/%s\"", convertToRef(change, patchset)), false)
-            .stream()
-            .map(
-                hit ->
-                    jenkins
-                        .getItemByFullName(hit.getProjectName(), Job.class)
-                        .getBuild(hit.getSearchName().substring(1)))
-            .sorted(Comparator.comparing(Run::getNumber))
-            .collect(Collectors.toList());
-    for (int i = 0; i < hits.size(); i++) {
-      checkRuns.add(
-          gerritTriggerCheckRunFactory.create(
-              change, patchset, hits.get(i).getParent(), hits.get(i), i + 1));
+  private Map<Job<?, ?>, List<CheckRun>> collectGerritTriggerRuns(int change, int patchset) {
+    try (ACLContext ctx = ACL.as2(ACL.SYSTEM2)) {
+      Map<Job<?, ?>, List<Run>> hits =
+          manager
+              .getHits(
+                  String.format("p:\"refs/changes/%s\"", convertToRef(change, patchset)), false)
+              .stream()
+              .map(
+                  hit ->
+                      jenkins
+                          .getItemByFullName(hit.getProjectName(), Job.class)
+                          .getBuild(hit.getSearchName().substring(1)))
+              .sorted(Comparator.comparing(Run::getNumber))
+              .collect(Collectors.groupingBy(Run::getParent));
+
+      Map<Job<?, ?>, List<CheckRun>> checkRuns = new HashMap<>();
+      for (Map.Entry<Job<?, ?>, List<Run>> entry : hits.entrySet()) {
+        List<Run> runs = entry.getValue();
+        List<CheckRun> checks = new ArrayList<>();
+        for (int i = 0; i < runs.size(); i++) {
+          checks.add(
+              gerritTriggerCheckRunFactory.create(
+                  change,
+                  patchset,
+                  runs.get(i).getParent(),
+                  runs.get(i),
+                  i + 1));
+        }
+        checkRuns.put(entry.getKey(), checks);
+      }
+      return checkRuns;
     }
-    return checkRuns;
   }
 
   @SuppressWarnings("rawtypes")
-  private List<CheckRun> collectGerritMultiBranchRuns(int change, int patchset) {
-    List<CheckRun> checkRuns = new ArrayList<>();
-    List<Run> hits =
-        manager.getHits(String.format("j:\"%s\"", convertToUrlEncodedRef(change, patchset)), false)
-            .stream()
-            .map(
-                hit ->
-                    jenkins
-                        .getItemByFullName(hit.getProjectName(), Job.class)
-                        .getBuild(hit.getSearchName().substring(1)))
-            .collect(Collectors.toList());
-    for (Run hit : hits) {
-      checkRuns.add(
-          gerritMultiBranchCheckRunFactory.create(
-              change, patchset, hit.getParent(), hit, hit.getNumber()));
-    }
+  private Map<Job<?, ?>, List<CheckRun>> collectGerritMultiBranchRuns(int change, int patchset) {
+    try (ACLContext ctx = ACL.as2(ACL.SYSTEM2)) {
+      Map<Job<?, ?>, List<Run>> runs =
+          manager
+              .getHits(String.format("j:\"%s\"", convertToUrlEncodedRef(change, patchset)), false)
+              .stream()
+              .map(
+                  hit ->
+                      jenkins
+                          .getItemByFullName(hit.getProjectName(), Job.class)
+                          .getBuild(hit.getSearchName().substring(1)))
+              .collect(Collectors.groupingBy(Run::getParent));
+
+      Map<Job<?, ?>, List<CheckRun>> checkRuns = new HashMap<>();
+      for (Map.Entry<Job<?, ?>, List<Run>> entry : runs.entrySet()) {
+        checkRuns.put(
+            entry.getKey(),
+            entry.getValue().stream()
+                .map(
+                    run ->
+                        gerritMultiBranchCheckRunFactory.create(
+                            change, patchset, run.getParent(), run, run.getNumber()))
+                .collect(Collectors.toList()));
+      }
     return checkRuns;
+    }
   }
 
   private static String convertToRef(int change, int patchset) {
