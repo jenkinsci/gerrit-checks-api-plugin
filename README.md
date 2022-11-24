@@ -25,7 +25,7 @@ objects defined in Gerrit as closely as possible.
 Request:
 
 ```
-GET /gerrit/check-runs?change=$CHANGE_NUMBER&patchset=$PATCHSET_NUMBER
+GET /gerrit-checks/runs?change=$CHANGE_NUMBER&patchset=$PATCHSET_NUMBER
 ```
 
 Response:

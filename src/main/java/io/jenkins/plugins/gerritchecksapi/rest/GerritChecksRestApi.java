@@ -24,7 +24,7 @@ import org.kohsuke.stapler.json.JsonHttpResponse;
 import org.kohsuke.stapler.verb.GET;
 
 @Extension
-public class GetCheckRuns implements RootAction {
+public class GerritChecksRestApi implements RootAction {
   private final CheckRunCollector checkRunCollector = new CheckRunCollector();
 
   @Override
@@ -39,11 +39,11 @@ public class GetCheckRuns implements RootAction {
 
   @Override
   public String getUrlName() {
-    return "gerrit";
+    return "gerrit-checks";
   }
 
   @GET
-  @WebMethod(name = "check-runs")
+  @WebMethod(name = "runs")
   public JsonHttpResponse getCheckRuns(
       @QueryParameter(required = true) int change, @QueryParameter(required = true) int patchset) {
     return new JsonHttpResponse(
