@@ -18,8 +18,11 @@ import com.google.inject.Guice;
 import com.google.inject.Injector;
 import com.google.inject.Stage;
 import hudson.Extension;
+import hudson.model.Job;
 import hudson.model.RootAction;
 import io.jenkins.plugins.gerritchecksapi.CheckRunCollector;
+import java.util.List;
+import java.util.Map;
 import net.sf.json.JSONObject;
 import org.kohsuke.stapler.QueryParameter;
 import org.kohsuke.stapler.WebMethod;
@@ -55,7 +58,11 @@ public class GerritChecksRestApi implements RootAction {
   @WebMethod(name = "runs")
   public JsonHttpResponse getCheckRuns(
       @QueryParameter(required = true) int change, @QueryParameter(required = true) int patchset) {
-    return new JsonHttpResponse(
-        JSONObject.fromObject(checkRunCollector.collectFor(change, patchset)), 200);
+    CheckRuns result = new CheckRuns();
+    Map<Job<?, ?>, List<CheckRun>> all = checkRunCollector.collectFor(change, patchset);
+    for (List<CheckRun> runs : all.values()) {
+      result.addRuns(runs);
+    }
+    return new JsonHttpResponse(JSONObject.fromObject(result), 200);
   }
 }

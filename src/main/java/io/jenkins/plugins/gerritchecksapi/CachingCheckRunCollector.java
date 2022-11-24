@@ -25,7 +25,6 @@ import hudson.model.Run;
 import hudson.security.ACL;
 import hudson.security.ACLContext;
 import io.jenkins.plugins.gerritchecksapi.rest.CheckRun;
-import io.jenkins.plugins.gerritchecksapi.rest.CheckRuns;
 import io.jenkins.plugins.gerritchecksapi.rest.GerritMultiBranchCheckRunFactory;
 import io.jenkins.plugins.gerritchecksapi.rest.GerritTriggerCheckRunFactory;
 import java.util.ArrayList;
@@ -68,12 +67,12 @@ public class CachingCheckRunCollector implements CheckRunCollector {
     this.gerritMultiBranchCheckRunFactory = gerritMultiBranchCheckRunFactory;
   }
 
-  public CheckRuns collectFor(int change, int patchset) {
-    CheckRuns result = new CheckRuns();
+  public Map<Job<?, ?>, List<CheckRun>> collectFor(int change, int patchset) {
+    Map<Job<?, ?>, List<CheckRun>> result = new HashMap<>();
     Map<Job<?, ?>, List<CheckRun>> runs = cache.get(convertToRef(change, patchset));
     for (Map.Entry<Job<?, ?>, List<CheckRun>> entry : runs.entrySet()) {
       if (jenkins.getAuthorizationStrategy().getACL(entry.getKey()).hasPermission(Job.READ)) {
-        result.addRuns(entry.getValue());
+        result.put(entry.getKey(), entry.getValue());
       }
     }
     return result;

@@ -14,8 +14,11 @@
 
 package io.jenkins.plugins.gerritchecksapi;
 
-import io.jenkins.plugins.gerritchecksapi.rest.CheckRuns;
+import hudson.model.Job;
+import io.jenkins.plugins.gerritchecksapi.rest.CheckRun;
+import java.util.List;
+import java.util.Map;
 
 public interface CheckRunCollector {
-  CheckRuns collectFor(int change, int patchset);
+  Map<Job<?, ?>, List<CheckRun>> collectFor(int change, int patchset);
 }
