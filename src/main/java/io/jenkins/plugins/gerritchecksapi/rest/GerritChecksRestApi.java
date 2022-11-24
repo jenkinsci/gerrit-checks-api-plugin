@@ -14,6 +14,9 @@
 
 package io.jenkins.plugins.gerritchecksapi.rest;
 
+import com.google.inject.Guice;
+import com.google.inject.Injector;
+import com.google.inject.Stage;
 import hudson.Extension;
 import hudson.model.RootAction;
 import io.jenkins.plugins.gerritchecksapi.CheckRunCollector;
@@ -25,7 +28,13 @@ import org.kohsuke.stapler.verb.GET;
 
 @Extension
 public class GerritChecksRestApi implements RootAction {
-  private final CheckRunCollector checkRunCollector = new CheckRunCollector();
+  private final Injector injector;
+  private final CheckRunCollector checkRunCollector;
+
+  public GerritChecksRestApi() {
+    injector = Guice.createInjector(Stage.PRODUCTION, new PluginGuiceModule());
+    checkRunCollector = injector.getInstance(CheckRunCollector.class);
+  }
 
   @Override
   public String getIconFileName() {

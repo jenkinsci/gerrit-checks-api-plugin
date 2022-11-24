@@ -18,6 +18,7 @@ import com.github.benmanes.caffeine.cache.CacheLoader;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.LoadingCache;
 import com.google.gerrit.extensions.restapi.Url;
+import com.google.inject.Singleton;
 import hudson.model.Job;
 import hudson.model.Run;
 import hudson.security.ACL;
@@ -36,6 +37,7 @@ import java.util.stream.Collectors;
 import jenkins.model.Jenkins;
 import org.jenkinsci.plugins.lucene.search.databackend.SearchBackendManager;
 
+@Singleton
 public class CheckRunCollector {
   private static final Jenkins jenkins = Jenkins.get();
   private final SearchBackendManager manager =
