@@ -15,12 +15,25 @@
 package io.jenkins.plugins.gerritchecksapi.rest;
 
 import com.google.inject.AbstractModule;
+import com.google.inject.Provides;
 import io.jenkins.plugins.gerritchecksapi.CheckRunCollector;
+import jenkins.model.Jenkins;
+import org.jenkinsci.plugins.lucene.search.databackend.SearchBackendManager;
 
 public class PluginGuiceModule extends AbstractModule {
 
   @Override
   protected void configure() {
     bind(CheckRunCollector.class);
+  }
+
+  @Provides
+  Jenkins getJenkins() {
+    return Jenkins.get();
+  }
+
+  @Provides
+  SearchBackendManager getSearchBackendManager(Jenkins jenkins) {
+    return jenkins.getExtensionList(SearchBackendManager.class).get(0);
   }
 }

@@ -18,6 +18,7 @@ import com.github.benmanes.caffeine.cache.CacheLoader;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.LoadingCache;
 import com.google.gerrit.extensions.restapi.Url;
+import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import hudson.model.Job;
 import hudson.model.Run;
@@ -39,9 +40,6 @@ import org.jenkinsci.plugins.lucene.search.databackend.SearchBackendManager;
 
 @Singleton
 public class CheckRunCollector {
-  private static final Jenkins jenkins = Jenkins.get();
-  private final SearchBackendManager manager =
-      jenkins.getExtensionList(SearchBackendManager.class).get(0);
   private final GerritTriggerCheckRunFactory gerritTriggerCheckRunFactory =
       new GerritTriggerCheckRunFactory();
   private final GerritMultiBranchCheckRunFactory gerritMultiBranchCheckRunFactory =
@@ -56,6 +54,15 @@ public class CheckRunCollector {
                   return collectAll(ref);
                 }
               });
+
+  private final Jenkins jenkins;
+  private final SearchBackendManager manager;
+
+  @Inject
+  CheckRunCollector(Jenkins jenkins, SearchBackendManager manager) {
+    this.jenkins = jenkins;
+    this.manager = manager;
+  }
 
   public CheckRuns collectFor(int change, int patchset) {
     CheckRuns result = new CheckRuns();
