@@ -25,6 +25,8 @@ public class PluginGuiceModule extends AbstractModule {
   @Override
   protected void configure() {
     bind(CheckRunCollector.class);
+    bind(GerritTriggerCheckRunFactory.class);
+    bind(GerritMultiBranchCheckRunFactory.class);
   }
 
   @Provides

@@ -40,10 +40,6 @@ import org.jenkinsci.plugins.lucene.search.databackend.SearchBackendManager;
 
 @Singleton
 public class CheckRunCollector {
-  private final GerritTriggerCheckRunFactory gerritTriggerCheckRunFactory =
-      new GerritTriggerCheckRunFactory();
-  private final GerritMultiBranchCheckRunFactory gerritMultiBranchCheckRunFactory =
-      new GerritMultiBranchCheckRunFactory();
   private final LoadingCache<String, Map<Job<?, ?>, List<CheckRun>>> cache =
       Caffeine.newBuilder()
           .expireAfterWrite(30, TimeUnit.SECONDS)
@@ -57,11 +53,19 @@ public class CheckRunCollector {
 
   private final Jenkins jenkins;
   private final SearchBackendManager manager;
+  private final GerritTriggerCheckRunFactory gerritTriggerCheckRunFactory;
+  private final GerritMultiBranchCheckRunFactory gerritMultiBranchCheckRunFactory;
 
   @Inject
-  CheckRunCollector(Jenkins jenkins, SearchBackendManager manager) {
+  CheckRunCollector(
+      Jenkins jenkins,
+      SearchBackendManager manager,
+      GerritTriggerCheckRunFactory gerritTriggerCheckRunFactory,
+      GerritMultiBranchCheckRunFactory gerritMultiBranchCheckRunFactory) {
     this.jenkins = jenkins;
     this.manager = manager;
+    this.gerritTriggerCheckRunFactory = gerritTriggerCheckRunFactory;
+    this.gerritMultiBranchCheckRunFactory = gerritMultiBranchCheckRunFactory;
   }
 
   public CheckRuns collectFor(int change, int patchset) {

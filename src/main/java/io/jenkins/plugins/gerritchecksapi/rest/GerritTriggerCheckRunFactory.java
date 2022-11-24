@@ -14,12 +14,14 @@
 
 package io.jenkins.plugins.gerritchecksapi.rest;
 
+import com.google.inject.Singleton;
 import hudson.model.Job;
 import hudson.model.Run;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
+@Singleton
 public class GerritTriggerCheckRunFactory extends AbstractCheckRunFactory {
 
   @Override
