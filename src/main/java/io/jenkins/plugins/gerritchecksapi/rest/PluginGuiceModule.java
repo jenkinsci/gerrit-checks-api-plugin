@@ -16,8 +16,10 @@ package io.jenkins.plugins.gerritchecksapi.rest;
 
 import com.google.inject.AbstractModule;
 import com.google.inject.Provides;
+import io.jenkins.plugins.gerritchecksapi.Caching;
 import io.jenkins.plugins.gerritchecksapi.CachingCheckRunCollector;
 import io.jenkins.plugins.gerritchecksapi.CheckRunCollector;
+import io.jenkins.plugins.gerritchecksapi.PermissionAwareCheckRunCollector;
 import jenkins.model.Jenkins;
 import org.jenkinsci.plugins.lucene.search.databackend.SearchBackendManager;
 
@@ -25,7 +27,8 @@ public class PluginGuiceModule extends AbstractModule {
 
   @Override
   protected void configure() {
-    bind(CheckRunCollector.class).to(CachingCheckRunCollector.class);
+    bind(CheckRunCollector.class).to(PermissionAwareCheckRunCollector.class);
+    bind(CheckRunCollector.class).annotatedWith(Caching.class).to(CachingCheckRunCollector.class);
     bind(GerritTriggerCheckRunFactory.class);
     bind(GerritMultiBranchCheckRunFactory.class);
   }

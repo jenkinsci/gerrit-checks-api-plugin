@@ -68,14 +68,7 @@ public class CachingCheckRunCollector implements CheckRunCollector {
   }
 
   public Map<Job<?, ?>, List<CheckRun>> collectFor(int change, int patchset) {
-    Map<Job<?, ?>, List<CheckRun>> result = new HashMap<>();
-    Map<Job<?, ?>, List<CheckRun>> runs = cache.get(convertToRef(change, patchset));
-    for (Map.Entry<Job<?, ?>, List<CheckRun>> entry : runs.entrySet()) {
-      if (jenkins.getAuthorizationStrategy().getACL(entry.getKey()).hasPermission(Job.READ)) {
-        result.put(entry.getKey(), entry.getValue());
-      }
-    }
-    return result;
+    return cache.get(convertToRef(change, patchset));
   }
 
   private Map<Job<?, ?>, List<CheckRun>> collectAll(String ref) {
