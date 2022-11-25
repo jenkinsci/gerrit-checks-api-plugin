@@ -16,6 +16,7 @@ package io.jenkins.plugins.gerritchecksapi;
 
 import com.google.gerrit.extensions.restapi.Url;
 import com.google.inject.Inject;
+import com.google.inject.Provider;
 import com.google.inject.Singleton;
 import hudson.model.Job;
 import hudson.model.Run;
@@ -37,18 +38,18 @@ import org.jenkinsci.plugins.lucene.search.databackend.SearchBackendManager;
 public class DirectCheckRunCollector implements CheckRunCollector {
 
   private final Jenkins jenkins;
-  private final SearchBackendManager manager;
+  private final Provider<SearchBackendManager> managerProvider;
   private final GerritTriggerCheckRunFactory gerritTriggerCheckRunFactory;
   private final GerritMultiBranchCheckRunFactory gerritMultiBranchCheckRunFactory;
 
   @Inject
   DirectCheckRunCollector(
       Jenkins jenkins,
-      SearchBackendManager manager,
+      Provider<SearchBackendManager> managerProvider,
       GerritTriggerCheckRunFactory gerritTriggerCheckRunFactory,
       GerritMultiBranchCheckRunFactory gerritMultiBranchCheckRunFactory) {
     this.jenkins = jenkins;
-    this.manager = manager;
+    this.managerProvider = managerProvider;
     this.gerritTriggerCheckRunFactory = gerritTriggerCheckRunFactory;
     this.gerritMultiBranchCheckRunFactory = gerritMultiBranchCheckRunFactory;
   }
@@ -66,6 +67,7 @@ public class DirectCheckRunCollector implements CheckRunCollector {
 
   @SuppressWarnings("rawtypes")
   private Map<Job<?, ?>, List<CheckRun>> collectGerritTriggerRuns(int change, int patchset) {
+    SearchBackendManager manager = getSearchBackendManager();
     try (ACLContext ctx = ACL.as2(ACL.SYSTEM2)) {
       Map<Job<?, ?>, List<Run>> hits =
           manager
@@ -97,6 +99,7 @@ public class DirectCheckRunCollector implements CheckRunCollector {
 
   @SuppressWarnings("rawtypes")
   private Map<Job<?, ?>, List<CheckRun>> collectGerritMultiBranchRuns(int change, int patchset) {
+    SearchBackendManager manager = getSearchBackendManager();
     try (ACLContext ctx = ACL.as2(ACL.SYSTEM2)) {
       Map<Job<?, ?>, List<Run>> runs =
           manager
@@ -122,6 +125,14 @@ public class DirectCheckRunCollector implements CheckRunCollector {
       }
       return checkRuns;
     }
+  }
+
+  private SearchBackendManager getSearchBackendManager() {
+    SearchBackendManager manager = managerProvider.get();
+    if (manager == null) {
+      throw new MissingDependencyException(SearchBackendManager.class.getName());
+    }
+    return manager;
   }
 
   private static String convertToRef(int change, int patchset) {

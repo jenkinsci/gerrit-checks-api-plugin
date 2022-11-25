@@ -14,12 +14,17 @@
 
 package io.jenkins.plugins.gerritchecksapi;
 
-import hudson.model.Job;
-import io.jenkins.plugins.gerritchecksapi.rest.CheckRun;
-import java.util.List;
-import java.util.Map;
+public class MissingDependencyException extends RuntimeException {
+  private static final long serialVersionUID = 1L;
 
-public interface CheckRunCollector {
-  Map<Job<?, ?>, List<CheckRun>> collectFor(int change, int patchset)
-      throws MissingDependencyException;
+  private final String dependencyName;
+
+  public MissingDependencyException(String dependencyName) {
+    this.dependencyName = dependencyName;
+  }
+
+  @Override
+  public String getMessage() {
+    return "Dependency " + dependencyName + " is unavailable";
+  }
 }
