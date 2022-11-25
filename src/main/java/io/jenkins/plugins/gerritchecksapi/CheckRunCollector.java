@@ -18,13 +18,10 @@ import com.github.benmanes.caffeine.cache.CacheLoader;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.LoadingCache;
 import com.google.gerrit.extensions.restapi.Url;
-import com.google.inject.Inject;
-
 import hudson.model.Job;
 import hudson.model.Run;
 import hudson.security.ACL;
 import hudson.security.ACLContext;
-import hudson.security.AuthorizationStrategy;
 import io.jenkins.plugins.gerritchecksapi.rest.CheckRun;
 import io.jenkins.plugins.gerritchecksapi.rest.CheckRuns;
 import io.jenkins.plugins.gerritchecksapi.rest.GerritMultiBranchCheckRunFactory;
@@ -110,11 +107,7 @@ public class CheckRunCollector {
         for (int i = 0; i < runs.size(); i++) {
           checks.add(
               gerritTriggerCheckRunFactory.create(
-                  change,
-                  patchset,
-                  runs.get(i).getParent(),
-                  runs.get(i),
-                  i + 1));
+                  change, patchset, runs.get(i).getParent(), runs.get(i), i + 1));
         }
         checkRuns.put(entry.getKey(), checks);
       }
@@ -147,7 +140,7 @@ public class CheckRunCollector {
                             change, patchset, run.getParent(), run, run.getNumber()))
                 .collect(Collectors.toList()));
       }
-    return checkRuns;
+      return checkRuns;
     }
   }
 
