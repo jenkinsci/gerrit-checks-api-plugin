@@ -14,143 +14,31 @@
 
 package io.jenkins.plugins.gerritchecksapi;
 
-import com.github.benmanes.caffeine.cache.CacheLoader;
+import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
-import com.github.benmanes.caffeine.cache.LoadingCache;
-import com.google.gerrit.extensions.restapi.Url;
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import hudson.model.Job;
-import hudson.model.Run;
-import hudson.security.ACL;
-import hudson.security.ACLContext;
 import io.jenkins.plugins.gerritchecksapi.rest.CheckRun;
-import io.jenkins.plugins.gerritchecksapi.rest.GerritMultiBranchCheckRunFactory;
-import io.jenkins.plugins.gerritchecksapi.rest.GerritTriggerCheckRunFactory;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
-import jenkins.model.Jenkins;
-import org.jenkinsci.plugins.lucene.search.databackend.SearchBackendManager;
 
 @Singleton
 public class CachingCheckRunCollector implements CheckRunCollector {
-  private final LoadingCache<PatchSetId, Map<Job<?, ?>, List<CheckRun>>> cache =
-      Caffeine.newBuilder()
-          .expireAfterWrite(30, TimeUnit.SECONDS)
-          .build(
-              new CacheLoader<PatchSetId, Map<Job<?, ?>, List<CheckRun>>>() {
-                @Override
-                public Map<Job<?, ?>, List<CheckRun>> load(PatchSetId ps) {
-                  return collectAll(ps);
-                }
-              });
+  private final Cache<PatchSetId, Map<Job<?, ?>, List<CheckRun>>> cache =
+      Caffeine.newBuilder().expireAfterWrite(30, TimeUnit.SECONDS).build();
 
-  private final Jenkins jenkins;
-  private final SearchBackendManager manager;
-  private final GerritTriggerCheckRunFactory gerritTriggerCheckRunFactory;
-  private final GerritMultiBranchCheckRunFactory gerritMultiBranchCheckRunFactory;
+  private final CheckRunCollector directCollector;
 
   @Inject
-  CachingCheckRunCollector(
-      Jenkins jenkins,
-      SearchBackendManager manager,
-      GerritTriggerCheckRunFactory gerritTriggerCheckRunFactory,
-      GerritMultiBranchCheckRunFactory gerritMultiBranchCheckRunFactory) {
-    this.jenkins = jenkins;
-    this.manager = manager;
-    this.gerritTriggerCheckRunFactory = gerritTriggerCheckRunFactory;
-    this.gerritMultiBranchCheckRunFactory = gerritMultiBranchCheckRunFactory;
+  CachingCheckRunCollector(@Direct CheckRunCollector directCollector) {
+    this.directCollector = directCollector;
   }
 
   public Map<Job<?, ?>, List<CheckRun>> collectFor(int change, int patchset) {
-    return cache.get(PatchSetId.create(change, patchset));
-  }
-
-  private Map<Job<?, ?>, List<CheckRun>> collectAll(PatchSetId ps) {
-    return collectAll(ps.changeId(), ps.patchSetNumber());
-  }
-
-  private Map<Job<?, ?>, List<CheckRun>> collectAll(int change, int patchset) {
-    Map<Job<?, ?>, List<CheckRun>> checkRuns = new HashMap<>();
-    if (jenkins.getPlugin("gerrit-trigger") != null) {
-      checkRuns.putAll(collectGerritTriggerRuns(change, patchset));
-    }
-    if (jenkins.getPlugin("gerrit-code-review") != null) {
-      checkRuns.putAll(collectGerritMultiBranchRuns(change, patchset));
-    }
-    return checkRuns;
-  }
-
-  @SuppressWarnings("rawtypes")
-  private Map<Job<?, ?>, List<CheckRun>> collectGerritTriggerRuns(int change, int patchset) {
-    try (ACLContext ctx = ACL.as2(ACL.SYSTEM2)) {
-      Map<Job<?, ?>, List<Run>> hits =
-          manager
-              .getHits(
-                  String.format("p:\"refs/changes/%s\"", convertToRef(change, patchset)), false)
-              .stream()
-              .map(
-                  hit ->
-                      jenkins
-                          .getItemByFullName(hit.getProjectName(), Job.class)
-                          .getBuild(hit.getSearchName().substring(1)))
-              .sorted(Comparator.comparing(Run::getNumber))
-              .collect(Collectors.groupingBy(Run::getParent));
-
-      Map<Job<?, ?>, List<CheckRun>> checkRuns = new HashMap<>();
-      for (Map.Entry<Job<?, ?>, List<Run>> entry : hits.entrySet()) {
-        List<Run> runs = entry.getValue();
-        List<CheckRun> checks = new ArrayList<>();
-        for (int i = 0; i < runs.size(); i++) {
-          checks.add(
-              gerritTriggerCheckRunFactory.create(
-                  change, patchset, runs.get(i).getParent(), runs.get(i), i + 1));
-        }
-        checkRuns.put(entry.getKey(), checks);
-      }
-      return checkRuns;
-    }
-  }
-
-  @SuppressWarnings("rawtypes")
-  private Map<Job<?, ?>, List<CheckRun>> collectGerritMultiBranchRuns(int change, int patchset) {
-    try (ACLContext ctx = ACL.as2(ACL.SYSTEM2)) {
-      Map<Job<?, ?>, List<Run>> runs =
-          manager
-              .getHits(String.format("j:\"%s\"", convertToUrlEncodedRef(change, patchset)), false)
-              .stream()
-              .map(
-                  hit ->
-                      jenkins
-                          .getItemByFullName(hit.getProjectName(), Job.class)
-                          .getBuild(hit.getSearchName().substring(1)))
-              .collect(Collectors.groupingBy(Run::getParent));
-
-      Map<Job<?, ?>, List<CheckRun>> checkRuns = new HashMap<>();
-      for (Map.Entry<Job<?, ?>, List<Run>> entry : runs.entrySet()) {
-        checkRuns.put(
-            entry.getKey(),
-            entry.getValue().stream()
-                .map(
-                    run ->
-                        gerritMultiBranchCheckRunFactory.create(
-                            change, patchset, run.getParent(), run, run.getNumber()))
-                .collect(Collectors.toList()));
-      }
-      return checkRuns;
-    }
-  }
-
-  private static String convertToRef(int change, int patchset) {
-    return String.format("%02d/%d/%d", change % 100, change, patchset);
-  }
-
-  private static String convertToUrlEncodedRef(int change, int patchset) {
-    return Url.encode(convertToRef(change, patchset));
+    return cache.get(
+        PatchSetId.create(change, patchset),
+        ps -> directCollector.collectFor(ps.changeId(), ps.patchSetNumber()));
   }
 }
