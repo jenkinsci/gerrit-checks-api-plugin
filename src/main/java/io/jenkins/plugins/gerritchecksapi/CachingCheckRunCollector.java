@@ -39,14 +39,14 @@ import org.jenkinsci.plugins.lucene.search.databackend.SearchBackendManager;
 
 @Singleton
 public class CachingCheckRunCollector implements CheckRunCollector {
-  private final LoadingCache<String, Map<Job<?, ?>, List<CheckRun>>> cache =
+  private final LoadingCache<PatchSetId, Map<Job<?, ?>, List<CheckRun>>> cache =
       Caffeine.newBuilder()
           .expireAfterWrite(30, TimeUnit.SECONDS)
           .build(
-              new CacheLoader<String, Map<Job<?, ?>, List<CheckRun>>>() {
+              new CacheLoader<PatchSetId, Map<Job<?, ?>, List<CheckRun>>>() {
                 @Override
-                public Map<Job<?, ?>, List<CheckRun>> load(String ref) {
-                  return collectAll(ref);
+                public Map<Job<?, ?>, List<CheckRun>> load(PatchSetId ps) {
+                  return collectAll(ps);
                 }
               });
 
@@ -68,14 +68,11 @@ public class CachingCheckRunCollector implements CheckRunCollector {
   }
 
   public Map<Job<?, ?>, List<CheckRun>> collectFor(int change, int patchset) {
-    return cache.get(convertToRef(change, patchset));
+    return cache.get(PatchSetId.create(change, patchset));
   }
 
-  private Map<Job<?, ?>, List<CheckRun>> collectAll(String ref) {
-    String[] refParts = ref.split("/");
-    return collectAll(
-        Integer.parseInt(refParts[refParts.length - 2]),
-        Integer.parseInt(refParts[refParts.length - 1]));
+  private Map<Job<?, ?>, List<CheckRun>> collectAll(PatchSetId ps) {
+    return collectAll(ps.changeId(), ps.patchSetNumber());
   }
 
   private Map<Job<?, ?>, List<CheckRun>> collectAll(int change, int patchset) {
