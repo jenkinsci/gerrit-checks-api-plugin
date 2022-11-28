@@ -1,2 +1,2 @@
 _extends: .github
-tag-template: gerrit-change-query-$NEXT_MINOR_VERSION
+tag-template: gerrit-checks-api-$NEXT_MINOR_VERSION

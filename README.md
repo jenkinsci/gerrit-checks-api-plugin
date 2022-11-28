@@ -1,4 +1,4 @@
-# gerrit-change-query
+# gerrit-checks-api
 
 ## Introduction
 
