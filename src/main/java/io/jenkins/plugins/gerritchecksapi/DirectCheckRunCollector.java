@@ -54,6 +54,7 @@ public class DirectCheckRunCollector implements CheckRunCollector {
     this.gerritMultiBranchCheckRunFactory = gerritMultiBranchCheckRunFactory;
   }
 
+  @Override
   public Map<Job<?, ?>, List<CheckRun>> collectFor(int change, int patchset) {
     Map<Job<?, ?>, List<CheckRun>> checkRuns = new HashMap<>();
     if (jenkins.getPlugin("gerrit-trigger") != null) {
