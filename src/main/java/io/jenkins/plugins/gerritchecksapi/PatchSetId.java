@@ -57,4 +57,8 @@ public class PatchSetId {
 
     return false;
   }
+
+  public String toRef() {
+    return String.format("%02d/%d/%d", changeId % 100, changeId, patchSetNumber);
+  }
 }

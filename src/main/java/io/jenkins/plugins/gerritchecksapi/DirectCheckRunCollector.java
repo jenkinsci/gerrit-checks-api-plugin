@@ -71,7 +71,7 @@ public class DirectCheckRunCollector implements CheckRunCollector {
     SearchBackendManager manager = getSearchBackendManager();
     try (ACLContext ctx = ACL.as2(ACL.SYSTEM2)) {
       Map<Job<?, ?>, List<Run>> hits =
-          manager.getHits(String.format("p:\"refs/changes/%s\"", convertToRef(ps)), false).stream()
+          manager.getHits(String.format("p:\"refs/changes/%s\"", ps.toRef()), false).stream()
               .map(
                   hit ->
                       jenkins
@@ -130,11 +130,7 @@ public class DirectCheckRunCollector implements CheckRunCollector {
     return manager;
   }
 
-  private static String convertToRef(PatchSetId ps) {
-    return String.format("%02d/%d/%d", ps.changeId() % 100, ps.changeId(), ps.patchSetNumber());
-  }
-
   private static String convertToUrlEncodedRef(PatchSetId ps) {
-    return Url.encode(convertToRef(ps));
+    return Url.encode(ps.toRef());
   }
 }
