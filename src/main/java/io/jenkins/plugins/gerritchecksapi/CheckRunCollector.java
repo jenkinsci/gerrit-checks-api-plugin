@@ -20,6 +20,5 @@ import java.util.List;
 import java.util.Map;
 
 public interface CheckRunCollector {
-  Map<Job<?, ?>, List<CheckRun>> collectFor(int change, int patchset)
-      throws MissingDependencyException;
+  Map<Job<?, ?>, List<CheckRun>> collectFor(PatchSetId ps) throws MissingDependencyException;
 }

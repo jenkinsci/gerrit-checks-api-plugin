@@ -22,6 +22,7 @@ import hudson.model.Job;
 import hudson.model.RootAction;
 import io.jenkins.plugins.gerritchecksapi.CheckRunCollector;
 import io.jenkins.plugins.gerritchecksapi.MissingDependencyException;
+import io.jenkins.plugins.gerritchecksapi.PatchSetId;
 import java.util.List;
 import java.util.Map;
 import net.sf.json.JSONObject;
@@ -61,7 +62,8 @@ public class GerritChecksRestApi implements RootAction {
       @QueryParameter(required = true) int change, @QueryParameter(required = true) int patchset) {
     CheckRuns result = new CheckRuns();
     try {
-      Map<Job<?, ?>, List<CheckRun>> all = checkRunCollector.collectFor(change, patchset);
+      Map<Job<?, ?>, List<CheckRun>> all =
+          checkRunCollector.collectFor(PatchSetId.create(change, patchset));
       for (List<CheckRun> runs : all.values()) {
         result.addRuns(runs);
       }

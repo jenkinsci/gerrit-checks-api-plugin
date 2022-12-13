@@ -17,6 +17,7 @@ package io.jenkins.plugins.gerritchecksapi.rest;
 import com.google.inject.Singleton;
 import hudson.model.Job;
 import hudson.model.Run;
+import io.jenkins.plugins.gerritchecksapi.PatchSetId;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -25,11 +26,11 @@ import java.util.List;
 public class GerritMultiBranchCheckRunFactory extends AbstractCheckRunFactory {
 
   @Override
-  public CheckRun create(int change, int patchset, Job<?, ?> job, Run<?, ?> run, int attempt) {
+  public CheckRun create(PatchSetId ps, Job<?, ?> job, Run<?, ?> run, int attempt) {
     CheckRun checkRun = new CheckRun();
 
-    checkRun.setChange(change);
-    checkRun.setPatchSet(patchset);
+    checkRun.setChange(ps.changeId());
+    checkRun.setPatchSet(ps.patchSetNumber());
 
     checkRun.setAttempt(attempt);
     checkRun.setExternalId(run.getExternalizableId());

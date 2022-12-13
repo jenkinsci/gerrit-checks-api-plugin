@@ -37,9 +37,7 @@ public class CachingCheckRunCollector implements CheckRunCollector {
   }
 
   @Override
-  public Map<Job<?, ?>, List<CheckRun>> collectFor(int change, int patchset) {
-    return cache.get(
-        PatchSetId.create(change, patchset),
-        ps -> directCollector.collectFor(ps.changeId(), ps.patchSetNumber()));
+  public Map<Job<?, ?>, List<CheckRun>> collectFor(PatchSetId ps) {
+    return cache.get(ps, p -> directCollector.collectFor(p));
   }
 }

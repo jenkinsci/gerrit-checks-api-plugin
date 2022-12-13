@@ -55,26 +55,23 @@ public class DirectCheckRunCollector implements CheckRunCollector {
   }
 
   @Override
-  public Map<Job<?, ?>, List<CheckRun>> collectFor(int change, int patchset) {
+  public Map<Job<?, ?>, List<CheckRun>> collectFor(PatchSetId ps) {
     Map<Job<?, ?>, List<CheckRun>> checkRuns = new HashMap<>();
     if (jenkins.getPlugin("gerrit-trigger") != null) {
-      checkRuns.putAll(collectGerritTriggerRuns(change, patchset));
+      checkRuns.putAll(collectGerritTriggerRuns(ps));
     }
     if (jenkins.getPlugin("gerrit-code-review") != null) {
-      checkRuns.putAll(collectGerritMultiBranchRuns(change, patchset));
+      checkRuns.putAll(collectGerritMultiBranchRuns(ps));
     }
     return checkRuns;
   }
 
   @SuppressWarnings("rawtypes")
-  private Map<Job<?, ?>, List<CheckRun>> collectGerritTriggerRuns(int change, int patchset) {
+  private Map<Job<?, ?>, List<CheckRun>> collectGerritTriggerRuns(PatchSetId ps) {
     SearchBackendManager manager = getSearchBackendManager();
     try (ACLContext ctx = ACL.as2(ACL.SYSTEM2)) {
       Map<Job<?, ?>, List<Run>> hits =
-          manager
-              .getHits(
-                  String.format("p:\"refs/changes/%s\"", convertToRef(change, patchset)), false)
-              .stream()
+          manager.getHits(String.format("p:\"refs/changes/%s\"", convertToRef(ps)), false).stream()
               .map(
                   hit ->
                       jenkins
@@ -89,8 +86,7 @@ public class DirectCheckRunCollector implements CheckRunCollector {
         List<CheckRun> checks = new ArrayList<>();
         for (int i = 0; i < runs.size(); i++) {
           checks.add(
-              gerritTriggerCheckRunFactory.create(
-                  change, patchset, runs.get(i).getParent(), runs.get(i), i + 1));
+              gerritTriggerCheckRunFactory.create(ps, runs.get(i).getParent(), runs.get(i), i + 1));
         }
         checkRuns.put(entry.getKey(), checks);
       }
@@ -99,13 +95,11 @@ public class DirectCheckRunCollector implements CheckRunCollector {
   }
 
   @SuppressWarnings("rawtypes")
-  private Map<Job<?, ?>, List<CheckRun>> collectGerritMultiBranchRuns(int change, int patchset) {
+  private Map<Job<?, ?>, List<CheckRun>> collectGerritMultiBranchRuns(PatchSetId ps) {
     SearchBackendManager manager = getSearchBackendManager();
     try (ACLContext ctx = ACL.as2(ACL.SYSTEM2)) {
       Map<Job<?, ?>, List<Run>> runs =
-          manager
-              .getHits(String.format("j:\"%s\"", convertToUrlEncodedRef(change, patchset)), false)
-              .stream()
+          manager.getHits(String.format("j:\"%s\"", convertToUrlEncodedRef(ps)), false).stream()
               .map(
                   hit ->
                       jenkins
@@ -121,7 +115,7 @@ public class DirectCheckRunCollector implements CheckRunCollector {
                 .map(
                     run ->
                         gerritMultiBranchCheckRunFactory.create(
-                            change, patchset, run.getParent(), run, run.getNumber()))
+                            ps, run.getParent(), run, run.getNumber()))
                 .collect(Collectors.toList()));
       }
       return checkRuns;
@@ -136,11 +130,11 @@ public class DirectCheckRunCollector implements CheckRunCollector {
     return manager;
   }
 
-  private static String convertToRef(int change, int patchset) {
-    return String.format("%02d/%d/%d", change % 100, change, patchset);
+  private static String convertToRef(PatchSetId ps) {
+    return String.format("%02d/%d/%d", ps.changeId() % 100, ps.changeId(), ps.patchSetNumber());
   }
 
-  private static String convertToUrlEncodedRef(int change, int patchset) {
-    return Url.encode(convertToRef(change, patchset));
+  private static String convertToUrlEncodedRef(PatchSetId ps) {
+    return Url.encode(convertToRef(ps));
   }
 }

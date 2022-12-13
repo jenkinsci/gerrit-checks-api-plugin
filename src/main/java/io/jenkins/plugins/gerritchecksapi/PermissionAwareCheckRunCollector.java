@@ -36,9 +36,9 @@ public class PermissionAwareCheckRunCollector implements CheckRunCollector {
   }
 
   @Override
-  public Map<Job<?, ?>, List<CheckRun>> collectFor(int change, int patchset) {
+  public Map<Job<?, ?>, List<CheckRun>> collectFor(PatchSetId ps) {
     Map<Job<?, ?>, List<CheckRun>> result = new HashMap<>();
-    Map<Job<?, ?>, List<CheckRun>> cached = cachingCollector.collectFor(change, patchset);
+    Map<Job<?, ?>, List<CheckRun>> cached = cachingCollector.collectFor(ps);
     for (Map.Entry<Job<?, ?>, List<CheckRun>> entry : cached.entrySet()) {
       if (jenkins.getAuthorizationStrategy().getACL(entry.getKey()).hasPermission(Job.READ)) {
         result.put(entry.getKey(), entry.getValue());

@@ -17,6 +17,7 @@ package io.jenkins.plugins.gerritchecksapi.rest;
 import hudson.model.Job;
 import hudson.model.Result;
 import hudson.model.Run;
+import io.jenkins.plugins.gerritchecksapi.PatchSetId;
 import io.jenkins.plugins.gerritchecksapi.rest.CheckResult.Category;
 import io.jenkins.plugins.gerritchecksapi.rest.CheckRun.RunStatus;
 import io.jenkins.plugins.gerritchecksapi.rest.Link.LinkIcon;
@@ -28,8 +29,7 @@ import jenkins.model.Jenkins;
 public abstract class AbstractCheckRunFactory {
   private final Jenkins jenkins = Jenkins.get();
 
-  public abstract CheckRun create(
-      int change, int patchset, Job<?, ?> job, Run<?, ?> run, int attempt);
+  public abstract CheckRun create(PatchSetId ps, Job<?, ?> job, Run<?, ?> run, int attempt);
 
   protected abstract List<Action> computeActions(Run<?, ?> run);
 
