@@ -36,6 +36,24 @@
       "serverId": "d5d70762-12d0-45a1-890d-524b12d3f735"
     },
     {
+      "unresolved": false,
+      "key": {
+        "uuid": "69042df4_8bc72fb4",
+        "filename": "src/main/java/io/jenkins/plugins/gerritchecksapi/CachingCheckRunCollector.java",
+        "patchSetId": 1
+      },
+      "lineNbr": 40,
+      "author": {
+        "id": 1020693
+      },
+      "writtenOn": "2022-12-14T08:58:01Z",
+      "side": 1,
+      "message": "Ack",
+      "parentUuid": "0c39a05a_919bf76d",
+      "revId": "7784479221d5cb5f7ed6a6111ebb0e1f77137ddd",
+      "serverId": "d5d70762-12d0-45a1-890d-524b12d3f735"
+    },
+    {
       "unresolved": true,
       "key": {
         "uuid": "ff900fd7_ea9ea72f",
