@@ -20,6 +20,24 @@
     {
       "unresolved": true,
       "key": {
+        "uuid": "0c39a05a_919bf76d",
+        "filename": "src/main/java/io/jenkins/plugins/gerritchecksapi/CachingCheckRunCollector.java",
+        "patchSetId": 1
+      },
+      "lineNbr": 40,
+      "author": {
+        "id": 1018954
+      },
+      "writtenOn": "2022-12-14T08:56:19Z",
+      "side": 1,
+      "message": "It is important that this exception is in the signature of the CheckRunCollector interface. Implementation classes do not have to repeat complete \"throws\" signature.\nThis is also unrelated to the missing @Override annotation.",
+      "parentUuid": "05e6fed5_15cd89b0",
+      "revId": "7784479221d5cb5f7ed6a6111ebb0e1f77137ddd",
+      "serverId": "d5d70762-12d0-45a1-890d-524b12d3f735"
+    },
+    {
+      "unresolved": true,
+      "key": {
         "uuid": "ff900fd7_ea9ea72f",
         "filename": "src/main/java/io/jenkins/plugins/gerritchecksapi/DirectCheckRunCollector.java",
         "patchSetId": 1
