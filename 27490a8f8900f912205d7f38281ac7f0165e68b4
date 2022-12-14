@@ -1,0 +1,7 @@
+Code-Review+2: Saša Živkov <zivkov@gmail.com>
+Verified+1: Thomas Dräbing <thomas.draebing@googlemail.com>
+Submitted-by: Thomas Dräbing <thomas.draebing@googlemail.com>
+Submitted-at: Wed, 14 Dec 2022 09:17:55 +0000
+Reviewed-on: https://review.gerrithub.io/c/jenkinsci/gerrit-checks-api-plugin/+/547445
+Project: jenkinsci/gerrit-checks-api-plugin
+Branch: refs/heads/main
