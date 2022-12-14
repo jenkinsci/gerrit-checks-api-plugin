@@ -1,2 +1,0 @@
-_extends: .github
-tag-template: gerrit-checks-api-$NEXT_MINOR_VERSION
