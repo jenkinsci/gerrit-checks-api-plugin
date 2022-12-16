@@ -30,7 +30,7 @@ GET /gerrit-checks/runs?change=$CHANGE_NUMBER&patchset=$PATCHSET_NUMBER
 
 Response:
 
-```json
+```js
 {
     // List of all Runs found for the queried patchset
     "runs": [
