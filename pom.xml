@@ -38,7 +38,7 @@
 		<changelist>999999-SNAPSHOT</changelist>
 
 		<!-- https://www.jenkins.io/doc/developer/plugin-development/choosing-jenkins-baseline/ -->
-		<jenkins.version>2.277.4</jenkins.version>
+		<jenkins.version>2.361.4</jenkins.version>
 		<gitHubRepo>jenkinsci/${project.artifactId}-plugin</gitHubRepo>
 	</properties>
 
@@ -47,8 +47,8 @@
 			<dependency>
 				<!-- Pick up common dependencies for the selected LTS line: https://github.com/jenkinsci/bom#usage -->
 				<groupId>io.jenkins.tools.bom</groupId>
-				<artifactId>bom-2.277.x</artifactId>
-				<version>984.vb5eaac999a7e</version>
+				<artifactId>bom-2.361.x</artifactId>
+				<version>2070.vf6802449b_215</version>
 				<type>pom</type>
 				<scope>import</scope>
 			</dependency>
@@ -73,7 +73,7 @@
 		<dependency>
 			<groupId>org.jenkins-ci.plugins</groupId>
 			<artifactId>apache-httpcomponents-client-4-api</artifactId>
-			<version>4.5.13-1.0</version>
+			<version>4.5.14-150.v7a_b_9d17134a_5</version>
 		</dependency>
 		<dependency>
 			<groupId>org.jenkins-ci.plugins</groupId>
@@ -90,7 +90,7 @@
 		<dependency>
 			<groupId>org.jenkins-ci.plugins</groupId>
 			<artifactId>lucene-search</artifactId>
-			<version>370.v62a5f618cd3a</version>
+			<version>389.v52a_ec2810b_ca</version>
 		</dependency>
 	</dependencies>
 
