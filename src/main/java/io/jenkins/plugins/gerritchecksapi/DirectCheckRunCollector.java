@@ -125,7 +125,7 @@ public class DirectCheckRunCollector implements CheckRunCollector {
         if (job == null) {
           throw new IllegalStateException("Couldn't find project returned by index query: " + hit.getProjectName());
         }
-        Run run = job.getBuild(hit.getSearchName().substring(1));
+        Run run = job.getBuild(hit.getSearchName().split("#")[1]);
         if (run == null) {
           throw new IllegalStateException(String.format("Couldn't find build %s for job %s returned by index query: ", hit.getSearchName(), job.getFullName()));
         }
