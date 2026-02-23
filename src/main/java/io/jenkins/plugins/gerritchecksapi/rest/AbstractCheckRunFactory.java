@@ -45,11 +45,17 @@ public abstract class AbstractCheckRunFactory {
   }
 
   protected static String computeFinishedTimeStamp(Run<?, ?> run) {
-    if (run.hasntStartedYet() || run.isBuilding()) {
+    if (run.hasntStartedYet()) {
       return null;
     }
+    long duration;
+    if (run.isBuilding()) {
+      duration = run.getEstimatedDuration();
+    } else {
+      duration = run.getDuration();
+    }
     return Instant.ofEpochMilli(run.getStartTimeInMillis())
-        .plusMillis(run.getDuration())
+        .plusMillis(duration)
         .toString();
   }
 
