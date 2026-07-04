@@ -61,7 +61,7 @@ public class Link {
     this.icon = icon;
   }
 
-  enum LinkIcon {
+  public enum LinkIcon {
     EXTERNAL,
     IMAGE,
     HISTORY,
