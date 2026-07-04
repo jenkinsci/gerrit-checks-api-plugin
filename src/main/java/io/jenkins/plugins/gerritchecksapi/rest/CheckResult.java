@@ -123,7 +123,7 @@ public class CheckResult {
     this.fixes = fixes;
   }
 
-  enum Category {
+  public enum Category {
     SUCCESS,
     INFO,
     WARNING,

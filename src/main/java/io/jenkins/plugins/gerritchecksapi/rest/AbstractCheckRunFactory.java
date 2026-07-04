@@ -34,7 +34,7 @@ public abstract class AbstractCheckRunFactory {
   protected abstract List<Action> computeActions(Run<?, ?> run);
 
   // TODO(Thomas): Add RUNNABLE status
-  protected static RunStatus computeStatus(Run<?, ?> run) {
+  public static RunStatus computeStatus(Run<?, ?> run) {
     if (run.hasntStartedYet()) {
       return RunStatus.SCHEDULED;
     }
@@ -44,7 +44,7 @@ public abstract class AbstractCheckRunFactory {
     return RunStatus.COMPLETED;
   }
 
-  protected static String computeFinishedTimeStamp(Run<?, ?> run) {
+  public static String computeFinishedTimeStamp(Run<?, ?> run) {
     if (run.hasntStartedYet()) {
       return null;
     }

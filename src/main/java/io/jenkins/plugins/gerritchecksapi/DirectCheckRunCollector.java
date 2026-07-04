@@ -19,18 +19,28 @@ import com.google.inject.Inject;
 import com.google.inject.Provider;
 import com.google.inject.Singleton;
 
+import hudson.model.Cause;
 import hudson.model.Job;
+import hudson.model.Result;
 import hudson.model.Run;
 import hudson.security.ACL;
 import hudson.security.ACLContext;
 import io.jenkins.plugins.gerritchecksapi.rest.CheckRun;
+import io.jenkins.plugins.gerritchecksapi.rest.CheckResult;
+import io.jenkins.plugins.gerritchecksapi.rest.CheckResult.Category;
+import io.jenkins.plugins.gerritchecksapi.rest.AbstractCheckRunFactory;
 import io.jenkins.plugins.gerritchecksapi.rest.GerritMultiBranchCheckRunFactory;
 import io.jenkins.plugins.gerritchecksapi.rest.GerritTriggerCheckRunFactory;
+import io.jenkins.plugins.gerritchecksapi.rest.Link;
+import io.jenkins.plugins.gerritchecksapi.rest.Link.LinkIcon;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 import jenkins.model.Jenkins;
 
@@ -41,6 +51,8 @@ import org.jenkinsci.plugins.lucene.search.databackend.SearchBackendManager;
 @Singleton
 public class DirectCheckRunCollector implements CheckRunCollector {
     private static final Logger LOG = Logger.getLogger(DirectCheckRunCollector.class);
+    private static final int MAX_DOWNSTREAM_DEPTH = 10;
+    private static final int MAX_RECENT_BUILDS_PER_JOB = 100;
 
   private final Jenkins jenkins;
   private final Provider<SearchBackendManager> managerProvider;
@@ -68,6 +80,7 @@ public class DirectCheckRunCollector implements CheckRunCollector {
     if (jenkins.getPlugin("gerrit-code-review") != null) {
       checkRuns.putAll(collectGerritMultiBranchRuns(ps));
     }
+    collectDownstreamCheckRuns(ps, checkRuns);
     return checkRuns;
   }
 
@@ -146,5 +159,175 @@ public class DirectCheckRunCollector implements CheckRunCollector {
 
   private static String convertToUrlEncodedRef(PatchSetId ps) {
     return Url.encode(ps.toRef());
+  }
+
+  @SuppressWarnings("rawtypes")
+  private void collectDownstreamCheckRuns(
+      PatchSetId ps, Map<Job<?, ?>, List<CheckRun>> checkRuns) {
+    Set<String> directRunIds = new HashSet<>();
+    Map<String, CheckRun> directRunByExtId = new HashMap<>();
+    for (List<CheckRun> runs : checkRuns.values()) {
+      for (CheckRun cr : runs) {
+        directRunIds.add(cr.getExternalId());
+        directRunByExtId.put(cr.getExternalId(), cr);
+      }
+    }
+    if (directRunIds.isEmpty()) {
+      return;
+    }
+
+    Map<String, List<Run<?, ?>>> downstreamMap = buildDownstreamMap();
+    Set<String> traversed = new HashSet<>(directRunIds);
+    for (String rootKey : directRunIds) {
+      List<Run<?, ?>> children = downstreamMap.get(rootKey);
+      if (children != null) {
+        for (Run<?, ?> child : children) {
+          String childKey = child.getExternalizableId();
+          if (directRunByExtId.containsKey(childKey)) {
+            CheckRun directRun = directRunByExtId.remove(childKey);
+            directRun.setExternalId(
+                buildDownstreamExternalId(rootKey, childKey));
+          } else {
+            Job<?, ?> childJob = child.getParent();
+            checkRuns.computeIfAbsent(childJob, k -> new ArrayList<>()).add(
+                createDownstreamCheckRun(ps, rootKey, child, childJob));
+          }
+          if (traversed.add(childKey)) {
+            traverseDownstream(ps, childKey, child, checkRuns,
+                downstreamMap, traversed, directRunIds, directRunByExtId, 1);
+          }
+        }
+      }
+    }
+  }
+
+  @SuppressWarnings("rawtypes")
+  private Map<String, List<Run<?, ?>>> buildDownstreamMap() {
+    Map<String, List<Run<?, ?>>> downstreamMap = new HashMap<>();
+    try (ACLContext ctx = ACL.as2(ACL.SYSTEM2)) {
+      for (Job<?, ?> job : jenkins.getAllItems(Job.class)) {
+        int count = 0;
+        for (Run<?, ?> run : job.getBuilds()) {
+          if (count++ >= MAX_RECENT_BUILDS_PER_JOB) {
+            break;
+          }
+          if (run == null) {
+            continue;
+          }
+          for (Cause cause : run.getCauses()) {
+            if (cause instanceof Cause.UpstreamCause) {
+              Cause.UpstreamCause uc = (Cause.UpstreamCause) cause;
+              String upstreamKey =
+                  uc.getUpstreamProject() + "#" + uc.getUpstreamBuild();
+              downstreamMap
+                  .computeIfAbsent(upstreamKey, k -> new ArrayList<>())
+                  .add(run);
+            }
+          }
+        }
+      }
+    }
+    return downstreamMap;
+  }
+
+  @SuppressWarnings("rawtypes")
+  private void traverseDownstream(
+      PatchSetId ps,
+      String upstreamKey,
+      Run<?, ?> upstreamRun,
+      Map<Job<?, ?>, List<CheckRun>> checkRuns,
+      Map<String, List<Run<?, ?>>> downstreamMap,
+      Set<String> traversed,
+      Set<String> directRunIds,
+      Map<String, CheckRun> directRunByExtId,
+      int depth) {
+
+    if (depth >= MAX_DOWNSTREAM_DEPTH) {
+      LOG.warn(String.format(
+          "Reached max downstream depth %d at run %s",
+          MAX_DOWNSTREAM_DEPTH, upstreamKey));
+      return;
+    }
+
+    List<Run<?, ?>> children = downstreamMap.get(upstreamKey);
+    if (children == null) {
+      return;
+    }
+
+    for (Run<?, ?> child : children) {
+      String childKey = child.getExternalizableId();
+      if (directRunByExtId.containsKey(childKey)) {
+        CheckRun directRun = directRunByExtId.remove(childKey);
+        directRun.setExternalId(
+            buildDownstreamExternalId(upstreamKey, childKey));
+      } else {
+        Job<?, ?> childJob = child.getParent();
+        checkRuns.computeIfAbsent(childJob, k -> new ArrayList<>()).add(
+            createDownstreamCheckRun(ps, upstreamKey, child, childJob));
+      }
+      if (traversed.add(childKey)) {
+        traverseDownstream(ps, childKey, child, checkRuns,
+            downstreamMap, traversed, directRunIds,
+            directRunByExtId, depth + 1);
+      }
+    }
+  }
+
+  private static String buildDownstreamExternalId(
+      String parentKey, String runKey) {
+    return String.format(
+        "{\"parent\":\"%s\",\"run\":\"%s\"}", parentKey, runKey);
+  }
+
+  @SuppressWarnings("rawtypes")
+  private CheckRun createDownstreamCheckRun(
+      PatchSetId ps,
+      String upstreamKey,
+      Run<?, ?> run,
+      Job<?, ?> job) {
+
+    String runId = run.getExternalizableId();
+    String externalId = buildDownstreamExternalId(upstreamKey, runId);
+
+    String runUrl = String.format("%s%s", jenkins.getRootUrl(), run.getUrl());
+
+    CheckRun checkRun = new CheckRun();
+    checkRun.setChange(ps.changeId());
+    checkRun.setPatchSet(ps.patchSetNumber());
+    checkRun.setAttempt(1);
+    checkRun.setExternalId(externalId);
+    checkRun.setCheckName(job.getDisplayName());
+    checkRun.setCheckDescription(job.getDescription());
+    checkRun.setCheckLink(runUrl);
+    checkRun.setStatus(AbstractCheckRunFactory.computeStatus(run));
+    checkRun.setStatusDescription(run.getBuildStatusSummary().message);
+    checkRun.setStatusLink(runUrl);
+    checkRun.setLabelName(null);
+    checkRun.setActions(new ArrayList<>());
+    checkRun.setScheduledTimestamp(run.getTime().toInstant().toString());
+    checkRun.setStartedTimestamp(
+        Instant.ofEpochMilli(run.getStartTimeInMillis()).toString());
+    checkRun.setFinishedTimestamp(
+        AbstractCheckRunFactory.computeFinishedTimeStamp(run));
+
+    List<CheckResult> results = new ArrayList<>();
+    if (!run.hasntStartedYet() && !run.isBuilding()) {
+      CheckResult result = new CheckResult();
+      result.setExternalId(externalId);
+      Result jenkinsResult = run.getResult();
+      if (jenkinsResult != null) {
+        result.setCategory(Category.fromResult(jenkinsResult));
+      }
+      Link consoleLink = new Link();
+      consoleLink.setUrl(String.format("%sconsole", runUrl));
+      consoleLink.setTooltip("Build log.");
+      consoleLink.setIcon(LinkIcon.CODE);
+      consoleLink.setPrimary(true);
+      result.setLinks(List.of(consoleLink));
+      results.add(result);
+    }
+    checkRun.setResults(results);
+
+    return checkRun;
   }
 }
