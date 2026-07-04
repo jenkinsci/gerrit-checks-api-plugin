@@ -15,6 +15,7 @@
 package io.jenkins.plugins.gerritchecksapi;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -22,14 +23,17 @@ import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.google.inject.Provider;
+import hudson.model.Cause;
 import hudson.model.Job;
 import hudson.model.Result;
 import hudson.model.Run;
+import hudson.util.RunList;
 import io.jenkins.plugins.gerritchecksapi.rest.CheckRun;
 import io.jenkins.plugins.gerritchecksapi.rest.GerritMultiBranchCheckRunFactory;
 import io.jenkins.plugins.gerritchecksapi.rest.GerritTriggerCheckRunFactory;
@@ -92,6 +96,23 @@ class DirectCheckRunCollectorTest {
     return job;
   }
 
+  /** Pre-create cause — UpstreamCause ctor internally calls run.getNumber()
+   *  which must not happen inside a when().thenReturn() chain. */
+  private Cause.UpstreamCause upstreamCause(Run run) {
+    return new Cause.UpstreamCause(run);
+  }
+
+  /**
+   * Sets job.getBuilds() to return a RunList containing the given runs.
+   * Must use doReturn+RunList mock because RunList.iterator() is final
+   * and RunList add() is unsupported on the real class.
+   */
+  private void setJobBuilds(Job job, Run... runs) {
+    RunList list = mock(RunList.class);
+    doReturn(List.of(runs).iterator()).when(list).iterator();
+    doReturn(list).when(job).getBuilds();
+  }
+
   private FreeTextSearchItemImplementation mockHit(
       String projectName, String searchName) {
     return new FreeTextSearchItemImplementation(
@@ -107,7 +128,7 @@ class DirectCheckRunCollectorTest {
     return cr;
   }
 
-  // --- verification of existing behavior ---
+  // --- tests ---
 
   @Test
   void collectFor_noPluginsInstalled_returnsEmpty() {
@@ -141,6 +162,128 @@ class DirectCheckRunCollectorTest {
   }
 
   @Test
+  void collectFor_oneDownstream_notInLucene_createsCheckRun() {
+    when(jenkins.getPlugin("gerrit-trigger")).thenReturn(mock(hudson.Plugin.class));
+    when(jenkins.getPlugin("gerrit-code-review")).thenReturn(null);
+
+    Job upstreamJob = mockJob("trigger-job", "trigger-job");
+    Run upstreamRun = mockRun("trigger-job", 5, upstreamJob);
+
+    Job downstreamJob = mockJob("downstream-job", "downstream-job");
+    Run downstreamRun = mockRun("downstream-job", 3, downstreamJob);
+
+    // Pre-create all objects that call mock methods BEFORE any when() chain
+    Cause.UpstreamCause downstreamCause = upstreamCause(upstreamRun);
+
+    when(manager.getHits(anyString(), anyBoolean()))
+        .thenReturn(Collections.singletonList(mockHit("trigger-job", "trigger-job#5")));
+    when(jenkins.getItemByFullName("trigger-job", Job.class)).thenReturn(upstreamJob);
+    when(upstreamJob.getBuild("5")).thenReturn(upstreamRun);
+
+    when(triggerFactory.create(any(), any(), any(), anyInt()))
+        .thenReturn(createPlainCheckRun(1, 1, "trigger-job#5"));
+
+    when(downstreamRun.getCauses()).thenReturn(Collections.singletonList(downstreamCause));
+    setJobBuilds(downstreamJob, downstreamRun);
+    when(jenkins.getAllItems(Job.class)).thenReturn(Collections.singletonList(downstreamJob));
+
+    Map<Job<?, ?>, List<CheckRun>> result = collector.collectFor(PatchSetId.create(1, 1));
+
+    assertEquals(2, result.size());
+    List<CheckRun> downstreamChecks = result.get(downstreamJob);
+    assertNotNull(downstreamChecks);
+    assertEquals(1, downstreamChecks.size());
+    assertEquals("{\"parent\":\"trigger-job#5\",\"run\":\"downstream-job#3\"}",
+        downstreamChecks.get(0).getExternalId());
+  }
+
+  @Test
+  void collectFor_downstreamAlsoInLucene_updatesExternalId_noDuplicate() {
+    when(jenkins.getPlugin("gerrit-trigger")).thenReturn(mock(hudson.Plugin.class));
+    when(jenkins.getPlugin("gerrit-code-review")).thenReturn(null);
+
+    Job upstreamJob = mockJob("trigger-job", "trigger-job");
+    Run upstreamRun = mockRun("trigger-job", 5, upstreamJob);
+
+    Job downstreamJob = mockJob("downstream-job", "downstream-job");
+    Run downstreamRun = mockRun("downstream-job", 3, downstreamJob);
+
+    // Pre-create BEFORE any when() chain
+    Cause.UpstreamCause downstreamCause = upstreamCause(upstreamRun);
+
+    when(manager.getHits(anyString(), anyBoolean()))
+        .thenReturn(List.of(
+            mockHit("trigger-job", "trigger-job#5"),
+            mockHit("downstream-job", "downstream-job#3")));
+    when(jenkins.getItemByFullName("trigger-job", Job.class)).thenReturn(upstreamJob);
+    when(jenkins.getItemByFullName("downstream-job", Job.class)).thenReturn(downstreamJob);
+    when(upstreamJob.getBuild("5")).thenReturn(upstreamRun);
+    when(downstreamJob.getBuild("3")).thenReturn(downstreamRun);
+
+    CheckRun upstreamCR = createPlainCheckRun(1, 1, "trigger-job#5");
+    CheckRun downstreamCR = createPlainCheckRun(1, 1, "downstream-job#3");
+    when(triggerFactory.create(any(), eq(upstreamJob), eq(upstreamRun), anyInt()))
+        .thenReturn(upstreamCR);
+    when(triggerFactory.create(any(), eq(downstreamJob), eq(downstreamRun), anyInt()))
+        .thenReturn(downstreamCR);
+
+    when(downstreamRun.getCauses()).thenReturn(Collections.singletonList(downstreamCause));
+    setJobBuilds(downstreamJob, downstreamRun);
+    when(jenkins.getAllItems(Job.class)).thenReturn(Collections.singletonList(downstreamJob));
+
+    Map<Job<?, ?>, List<CheckRun>> result = collector.collectFor(PatchSetId.create(1, 1));
+
+    List<CheckRun> downstreamChecks = result.get(downstreamJob);
+    assertNotNull(downstreamChecks);
+    assertEquals(1, downstreamChecks.size(),
+        "Should have exactly one CheckRun — no duplicate");
+    assertEquals("{\"parent\":\"trigger-job#5\",\"run\":\"downstream-job#3\"}",
+        downstreamChecks.get(0).getExternalId());
+  }
+
+  @Test
+  void collectFor_deepChain_allDownstreamsDiscovered() {
+    when(jenkins.getPlugin("gerrit-trigger")).thenReturn(mock(hudson.Plugin.class));
+    when(jenkins.getPlugin("gerrit-code-review")).thenReturn(null);
+
+    // A -> B -> C
+    Job jobA = mockJob("job-a", "job-a");
+    Run runA = mockRun("job-a", 1, jobA);
+
+    Job jobB = mockJob("job-b", "job-b");
+    Run runB = mockRun("job-b", 2, jobB);
+
+    Job jobC = mockJob("job-c", "job-c");
+    Run runC = mockRun("job-c", 3, jobC);
+
+    // Pre-create ALL causes BEFORE any when() chain
+    Cause.UpstreamCause causeB = upstreamCause(runA);
+    Cause.UpstreamCause causeC = upstreamCause(runB);
+
+    when(manager.getHits(anyString(), anyBoolean()))
+        .thenReturn(Collections.singletonList(mockHit("job-a", "job-a#1")));
+    when(jenkins.getItemByFullName("job-a", Job.class)).thenReturn(jobA);
+    when(jobA.getBuild("1")).thenReturn(runA);
+
+    when(triggerFactory.create(any(), any(), any(), anyInt()))
+        .thenReturn(createPlainCheckRun(1, 1, "job-a#1"));
+
+    when(runB.getCauses()).thenReturn(Collections.singletonList(causeB));
+    when(runC.getCauses()).thenReturn(Collections.singletonList(causeC));
+    setJobBuilds(jobB, runB);
+    setJobBuilds(jobC, runC);
+    when(jenkins.getAllItems(Job.class)).thenReturn(List.of(jobB, jobC));
+
+    Map<Job<?, ?>, List<CheckRun>> result = collector.collectFor(PatchSetId.create(1, 1));
+
+    assertEquals(3, result.size(), "Should have runs for A, B, and C");
+    assertEquals("{\"parent\":\"job-a#1\",\"run\":\"job-b#2\"}",
+        result.get(jobB).get(0).getExternalId());
+    assertEquals("{\"parent\":\"job-b#2\",\"run\":\"job-c#3\"}",
+        result.get(jobC).get(0).getExternalId());
+  }
+
+  @Test
   void collectFor_noLuceneHits_returnsEmpty() {
     when(jenkins.getPlugin("gerrit-trigger")).thenReturn(mock(hudson.Plugin.class));
     when(jenkins.getPlugin("gerrit-code-review")).thenReturn(null);
@@ -149,6 +292,40 @@ class DirectCheckRunCollectorTest {
 
     Map<Job<?, ?>, List<CheckRun>> result = collector.collectFor(PatchSetId.create(1, 1));
     assertTrue(result.isEmpty());
+  }
+
+  @Test
+  void collectFor_downstreamRerunAction_notAdded() {
+    when(jenkins.getPlugin("gerrit-trigger")).thenReturn(mock(hudson.Plugin.class));
+    when(jenkins.getPlugin("gerrit-code-review")).thenReturn(null);
+
+    Job upstreamJob = mockJob("trigger-job", "trigger-job");
+    Run upstreamRun = mockRun("trigger-job", 5, upstreamJob);
+
+    Job downstreamJob = mockJob("downstream-job", "downstream-job");
+    Run downstreamRun = mockRun("downstream-job", 3, downstreamJob);
+
+    // Pre-create BEFORE any when() chain
+    Cause.UpstreamCause downstreamCause = upstreamCause(upstreamRun);
+
+    when(manager.getHits(anyString(), anyBoolean()))
+        .thenReturn(Collections.singletonList(mockHit("trigger-job", "trigger-job#5")));
+    when(jenkins.getItemByFullName("trigger-job", Job.class)).thenReturn(upstreamJob);
+    when(upstreamJob.getBuild("5")).thenReturn(upstreamRun);
+
+    when(triggerFactory.create(any(), any(), any(), anyInt()))
+        .thenReturn(createPlainCheckRun(1, 1, "trigger-job#5"));
+
+    when(downstreamRun.getCauses()).thenReturn(Collections.singletonList(downstreamCause));
+    setJobBuilds(downstreamJob, downstreamRun);
+    when(jenkins.getAllItems(Job.class)).thenReturn(Collections.singletonList(downstreamJob));
+
+    Map<Job<?, ?>, List<CheckRun>> result = collector.collectFor(PatchSetId.create(1, 1));
+
+    List<CheckRun> downstreamChecks = result.get(downstreamJob);
+    assertNotNull(downstreamChecks);
+    assertTrue(downstreamChecks.get(0).getActions().isEmpty(),
+        "Downstream CheckRun should have no rerun action");
   }
 
   @Test
@@ -180,6 +357,8 @@ class DirectCheckRunCollectorTest {
     assertEquals(2, result.size());
   }
 
+  // --- regression: normal use cases that must not break ---
+
   @Test
   void collectFor_gerritTriggerMultipleAttempts_sequentialNumbers() {
     when(jenkins.getPlugin("gerrit-trigger")).thenReturn(mock(hudson.Plugin.class));
@@ -189,6 +368,7 @@ class DirectCheckRunCollectorTest {
     Run run5 = mockRun("trigger-job", 5, job);
     Run run12 = mockRun("trigger-job", 12, job);
 
+    // Return hits in reverse order — collector must sort by build number
     when(manager.getHits(anyString(), anyBoolean())).thenReturn(List.of(
         mockHit("trigger-job", "trigger-job#12"),
         mockHit("trigger-job", "trigger-job#5")));
@@ -196,15 +376,18 @@ class DirectCheckRunCollectorTest {
     when(job.getBuild("5")).thenReturn(run5);
     when(job.getBuild("12")).thenReturn(run12);
 
-    when(triggerFactory.create(any(), eq(job), eq(run5), eq(1)))
-        .thenReturn(createPlainCheckRun(1, 1, "trigger-job#5"));
-    when(triggerFactory.create(any(), eq(job), eq(run12), eq(2)))
-        .thenReturn(createPlainCheckRun(1, 1, "trigger-job#12"));
+    when(triggerFactory.create(any(), any(), any(), anyInt()))
+        .thenReturn(createPlainCheckRun(1, 1, "trigger-job#5"),
+                    createPlainCheckRun(1, 1, "trigger-job#12"));
 
     Map<Job<?, ?>, List<CheckRun>> result = collector.collectFor(PatchSetId.create(1, 1));
 
     assertEquals(1, result.size());
     assertEquals(2, result.get(job).size());
+
+    // Verify factory was called with attempt=1 for build#5, attempt=2 for build#12
+    verify(triggerFactory).create(any(), any(), eq(run5), eq(1));
+    verify(triggerFactory).create(any(), any(), eq(run12), eq(2));
   }
 
   @Test
@@ -225,10 +408,9 @@ class DirectCheckRunCollectorTest {
     when(jobA.getBuild("1")).thenReturn(runA);
     when(jobB.getBuild("3")).thenReturn(runB);
 
-    when(triggerFactory.create(any(), eq(jobA), eq(runA), anyInt()))
-        .thenReturn(createPlainCheckRun(1, 1, "job-a#1"));
-    when(triggerFactory.create(any(), eq(jobB), eq(runB), anyInt()))
-        .thenReturn(createPlainCheckRun(1, 1, "job-b#3"));
+    when(triggerFactory.create(any(), any(), any(), anyInt()))
+        .thenReturn(createPlainCheckRun(1, 1, "job-a#1"),
+                    createPlainCheckRun(1, 1, "job-b#3"));
 
     Map<Job<?, ?>, List<CheckRun>> result = collector.collectFor(PatchSetId.create(1, 1));
 
@@ -257,6 +439,7 @@ class DirectCheckRunCollectorTest {
 
     collector.collectFor(PatchSetId.create(42, 3));
 
+    // gerrit-code-review factory should receive run.getNumber() (=7) as attempt
     verify(multiBranchFactory).create(any(), any(), eq(run), eq(7));
   }
 
@@ -271,8 +454,11 @@ class DirectCheckRunCollectorTest {
 
   @Test
   void patchSetId_toRef_correctFormat() {
+    // Change 123, patchset 5 → refs/changes/23/123/5
     assertEquals("23/123/5", PatchSetId.create(123, 5).toRef());
+    // Single digit change: 7, patchset 1 → refs/changes/07/7/1
     assertEquals("07/7/1", PatchSetId.create(7, 1).toRef());
+    // Large change: 12345, patchset 3 → refs/changes/45/12345/3
     assertEquals("45/12345/3", PatchSetId.create(12345, 3).toRef());
   }
 
@@ -286,14 +472,19 @@ class DirectCheckRunCollectorTest {
     assertEquals(a1, a2);
     assertEquals(a1.hashCode(), a2.hashCode());
     assertEquals(a1, a1);
+    // Not equal to null or different type
     org.junit.jupiter.api.Assertions.assertNotEquals(a1, null);
     org.junit.jupiter.api.Assertions.assertNotEquals(a1, "string");
+    // Different patchset
     org.junit.jupiter.api.Assertions.assertNotEquals(a1, b);
+    // Different change
     org.junit.jupiter.api.Assertions.assertNotEquals(a1, c);
   }
 
   @Test
   void queryRuns_jobNotFoundByLucene_throwsIllegalStateException() {
+    // This test verifies the error path when the lucene index is stale:
+    // a hit references a project that no longer exists.
     when(jenkins.getPlugin("gerrit-trigger")).thenReturn(mock(hudson.Plugin.class));
     when(jenkins.getPlugin("gerrit-code-review")).thenReturn(null);
 
@@ -307,6 +498,7 @@ class DirectCheckRunCollectorTest {
 
   @Test
   void queryRuns_buildNotFoundByLucene_throwsIllegalStateException() {
+    // Lucene hit references a build that no longer exists (stale index).
     when(jenkins.getPlugin("gerrit-trigger")).thenReturn(mock(hudson.Plugin.class));
     when(jenkins.getPlugin("gerrit-code-review")).thenReturn(null);
 
