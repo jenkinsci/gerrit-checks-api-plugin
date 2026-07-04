@@ -82,6 +82,11 @@
       <artifactId>lucene-search</artifactId>
       <version>425.v2ccf4cc3a_d55</version>
     </dependency>
+    <dependency>
+      <groupId>org.mockito</groupId>
+      <artifactId>mockito-core</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <repositories>
