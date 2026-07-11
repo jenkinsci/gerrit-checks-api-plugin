@@ -15,6 +15,7 @@
 package io.jenkins.plugins.gerritchecksapi;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -295,7 +296,7 @@ class DirectCheckRunCollectorTest {
   }
 
   @Test
-  void collectFor_downstreamRerunAction_notAdded() {
+  void collectFor_downstreamRerunAction_alwaysAdded() {
     when(jenkins.getPlugin("gerrit-trigger")).thenReturn(mock(hudson.Plugin.class));
     when(jenkins.getPlugin("gerrit-code-review")).thenReturn(null);
 
@@ -324,8 +325,14 @@ class DirectCheckRunCollectorTest {
 
     List<CheckRun> downstreamChecks = result.get(downstreamJob);
     assertNotNull(downstreamChecks);
-    assertTrue(downstreamChecks.get(0).getActions().isEmpty(),
-        "Downstream CheckRun should have no rerun action");
+    assertEquals(1, downstreamChecks.get(0).getActions().size(),
+        "Downstream CheckRun should always have a rerun action");
+    assertFalse(downstreamChecks.get(0).getActions().get(0).isDisabled(),
+        "Rerun action should be enabled");
+    assertTrue(
+        downstreamChecks.get(0).getActions().get(0).getUrl()
+            .endsWith("/gerrit-trigger-retrigger-this"),
+        "Rerun URL should point to gerrit-trigger-retrigger-this on the run");
   }
 
   @Test
