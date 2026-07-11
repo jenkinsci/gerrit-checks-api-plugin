@@ -25,7 +25,7 @@ public class RerunAction extends Action {
     super(NAME, TOOLTIP, PRIMARY, SUMMARY, METHOD);
   }
 
-  protected RerunAction(boolean disabled, String url) {
+  public RerunAction(boolean disabled, String url) {
     super(NAME, TOOLTIP, PRIMARY, SUMMARY, METHOD, disabled, url, null);
   }
 }
