@@ -34,7 +34,7 @@ public class GerritMultiBranchCheckRunFactory extends AbstractCheckRunFactory {
 
     checkRun.setAttempt(attempt);
     checkRun.setExternalId(run.getExternalizableId());
-    checkRun.setCheckName(job.getParent().getDisplayName());
+    checkRun.setCheckName(job.getParent().getFullDisplayName());
     checkRun.setCheckDescription(job.getDescription());
     checkRun.setCheckLink(getAbsoluteRunUrl(run));
     checkRun.setStatus(computeStatus(run));
