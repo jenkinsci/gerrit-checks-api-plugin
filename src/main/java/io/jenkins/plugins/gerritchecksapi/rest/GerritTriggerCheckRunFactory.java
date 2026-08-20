@@ -34,7 +34,7 @@ public class GerritTriggerCheckRunFactory extends AbstractCheckRunFactory {
 
     checkRun.setAttempt(attempt);
     checkRun.setExternalId(run.getExternalizableId());
-    checkRun.setCheckName(job.getDisplayName());
+    checkRun.setCheckName(job.getFullDisplayName());
     checkRun.setCheckDescription(job.getDescription());
     checkRun.setCheckLink(getAbsoluteRunUrl(run));
     checkRun.setStatus(computeStatus(run));

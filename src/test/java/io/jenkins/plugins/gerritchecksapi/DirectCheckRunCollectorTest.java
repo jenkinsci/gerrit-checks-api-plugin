@@ -94,6 +94,7 @@ class DirectCheckRunCollectorTest {
     Job job = mock(Job.class);
     when(job.getFullName()).thenReturn(fullName);
     when(job.getDisplayName()).thenReturn(displayName);
+    when(job.getFullDisplayName()).thenReturn("my-folder » " + displayName);
     when(job.getDescription()).thenReturn("description of " + displayName);
     return job;
   }
@@ -220,6 +221,7 @@ class DirectCheckRunCollectorTest {
     assertEquals(1, downstreamChecks.size());
     assertEquals("{\"parent\":\"trigger-job#5\",\"run\":\"downstream-job#3\"}",
         downstreamChecks.get(0).getExternalId());
+    assertEquals("my-folder » downstream-job", downstreamChecks.get(0).getCheckName());
   }
 
   @Test

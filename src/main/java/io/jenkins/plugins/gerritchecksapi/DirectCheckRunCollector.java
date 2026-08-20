@@ -299,7 +299,7 @@ public class DirectCheckRunCollector implements CheckRunCollector {
     checkRun.setPatchSet(ps.patchSetNumber());
     checkRun.setAttempt(1);
     checkRun.setExternalId(externalId);
-    checkRun.setCheckName(job.getDisplayName());
+    checkRun.setCheckName(job.getFullDisplayName());
     checkRun.setCheckDescription(job.getDescription());
     checkRun.setCheckLink(runUrl);
     checkRun.setStatus(AbstractCheckRunFactory.computeStatus(run));
