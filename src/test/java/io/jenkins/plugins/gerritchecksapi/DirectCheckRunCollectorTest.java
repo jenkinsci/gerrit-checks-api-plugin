@@ -47,6 +47,7 @@ import org.jenkinsci.plugins.lucene.search.FreeTextSearchItemImplementation;
 import org.jenkinsci.plugins.lucene.search.databackend.SearchBackendManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
@@ -160,6 +161,29 @@ class DirectCheckRunCollectorTest {
 
     assertEquals(1, result.size());
     assertEquals("trigger-job#5", result.get(job).get(0).getExternalId());
+  }
+
+  @Test
+  void collectFor_gerritTrigger_queryExcludesMergedChanges() {
+    when(jenkins.getPlugin("gerrit-trigger")).thenReturn(mock(hudson.Plugin.class));
+    when(jenkins.getPlugin("gerrit-code-review")).thenReturn(null);
+
+    Job job = mockJob("trigger-job", "trigger-job");
+    Run run = mockRun("trigger-job", 5, job);
+
+    when(manager.getHits(anyString(), anyBoolean()))
+        .thenReturn(Collections.singletonList(mockHit("trigger-job", "trigger-job#5")));
+    when(jenkins.getItemByFullName("trigger-job", Job.class)).thenReturn(job);
+    when(job.getBuild("5")).thenReturn(run);
+    when(triggerFactory.create(any(), any(), any(), anyInt()))
+        .thenReturn(createPlainCheckRun(1, 1, "trigger-job#5"));
+
+    collector.collectFor(PatchSetId.create(1, 1));
+
+    ArgumentCaptor<String> queryCaptor = ArgumentCaptor.forClass(String.class);
+    verify(manager).getHits(queryCaptor.capture(), anyBoolean());
+    assertEquals("p:\"refs/changes/01/1/1\" -p:\"change-merged\"",
+        queryCaptor.getValue());
   }
 
   @Test

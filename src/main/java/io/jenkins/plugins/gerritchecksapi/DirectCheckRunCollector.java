@@ -91,7 +91,7 @@ public class DirectCheckRunCollector implements CheckRunCollector {
   private Map<Job<?, ?>, List<CheckRun>> collectGerritTriggerRuns(PatchSetId ps) {
     SearchBackendManager manager = getSearchBackendManager();
     try (ACLContext ctx = ACL.as2(ACL.SYSTEM2)) {
-      Map<Job<?, ?>, List<Run>> hits = queryRuns(String.format("p:\"refs/changes/%s\"", ps.toRef()), manager).stream()
+      Map<Job<?, ?>, List<Run>> hits = queryRuns(String.format("p:\"refs/changes/%s\" -p:\"change-merged\"", ps.toRef()), manager).stream()
               .sorted(Comparator.comparing(Run::getNumber))
               .collect(Collectors.groupingBy(Run::getParent));
 
