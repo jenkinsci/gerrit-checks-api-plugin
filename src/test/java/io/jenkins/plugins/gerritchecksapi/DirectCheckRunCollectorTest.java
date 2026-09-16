@@ -117,9 +117,15 @@ class DirectCheckRunCollectorTest {
   }
 
   private FreeTextSearchItemImplementation mockHit(
-      String projectName, String searchName) {
+      String projectName, String searchName, String  buildNumber) {
     return new FreeTextSearchItemImplementation(
-        searchName, projectName, new String[0], "", false);
+        searchName, projectName, new String[0],
+          String.format("%s/%s/%s/", "http://jenkins.localhost",  projectName, buildNumber == null ? searchName : buildNumber),
+          false);
+  }
+  private FreeTextSearchItemImplementation mockHit(
+        String projectName, String searchName) {
+    return mockHit(projectName, searchName, searchName.contains("#") ? searchName.split("#")[1] : null);
   }
 
   private CheckRun createPlainCheckRun(int change, int patchset, String externalId) {
@@ -152,6 +158,28 @@ class DirectCheckRunCollectorTest {
 
     when(manager.getHits(anyString(), anyBoolean()))
         .thenReturn(Collections.singletonList(mockHit("trigger-job", "trigger-job#5")));
+    when(jenkins.getItemByFullName("trigger-job", Job.class)).thenReturn(job);
+    when(job.getBuild("5")).thenReturn(run);
+
+    when(triggerFactory.create(any(), any(), any(), anyInt()))
+        .thenReturn(createPlainCheckRun(1, 1, "trigger-job#5"));
+
+    Map<Job<?, ?>, List<CheckRun>> result = collector.collectFor(PatchSetId.create(1, 1));
+
+    assertEquals(1, result.size());
+    assertEquals("trigger-job#5", result.get(job).get(0).getExternalId());
+  }
+
+  @Test
+  void collectFor_oneDirectRun_buildNumber_fallback() {
+    when(jenkins.getPlugin("gerrit-trigger")).thenReturn(mock(hudson.Plugin.class));
+    when(jenkins.getPlugin("gerrit-code-review")).thenReturn(null);
+
+    Job job = mockJob("trigger-job", "trigger-job");
+    Run run = mockRun("trigger-job", 5, job);
+
+    when(manager.getHits(anyString(), anyBoolean()))
+        .thenReturn(Collections.singletonList(mockHit("trigger-job","trigger-job", "5")));
     when(jenkins.getItemByFullName("trigger-job", Job.class)).thenReturn(job);
     when(job.getBuild("5")).thenReturn(run);
 
