@@ -14,6 +14,8 @@ This plugin depends on the Lucene index provided by the
 was not already built, this has to be done before the REST API can be used. The
 process of how to build the index can be found
 [here](https://plugins.jenkins.io/lucene-search/#plugin-content-database-rebuild).
+**If Lucene Search is used only for gerrit jenkins connection disable console log indexing
+in the Lucene Search plugin.**
 
 ## Using the REST-API
 
