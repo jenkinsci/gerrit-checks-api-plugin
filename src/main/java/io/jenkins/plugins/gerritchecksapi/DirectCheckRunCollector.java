@@ -38,6 +38,7 @@ import io.jenkins.plugins.gerritchecksapi.rest.Link.LinkIcon;
 import io.jenkins.plugins.gerritchecksapi.rest.RerunAction;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -141,7 +142,12 @@ public class DirectCheckRunCollector implements CheckRunCollector {
         if (job == null) {
           throw new IllegalStateException("Couldn't find project returned by index query: " + hit.getProjectName());
         }
-        Run run = job.getBuild(hit.getSearchName().split("#")[1]);
+        final List<String> urlSegments = Arrays.asList(hit.getSearchUrl().split("/"));
+        var buildNumber = urlSegments.get(urlSegments.size() - 1);
+        if (hit.getSearchName().contains("#")) {
+          buildNumber = hit.getSearchName().split("#")[1];
+        }
+        Run run = job.getBuild(buildNumber);
         if (run == null) {
           throw new IllegalStateException(String.format("Couldn't find build %s for job %s returned by index query: ", hit.getSearchName(), job.getFullName()));
         }
