@@ -383,10 +383,10 @@ class DirectCheckRunCollectorTest {
         "Downstream CheckRun should always have a rerun action");
     assertFalse(downstreamChecks.get(0).getActions().get(0).isDisabled(),
         "Rerun action should be enabled");
-    assertTrue(
-        downstreamChecks.get(0).getActions().get(0).getUrl()
-            .endsWith("/gerrit-trigger-retrigger-this"),
-        "Rerun URL should point to gerrit-trigger-retrigger-this on the run");
+    assertEquals(
+        "http://jenkins/job/downstream-job/3/gerrit-trigger-retrigger-this/index",
+        downstreamChecks.get(0).getActions().get(0).getUrl(),
+        "Rerun URL should point to the retrigger index route of the run");
   }
 
   @Test
