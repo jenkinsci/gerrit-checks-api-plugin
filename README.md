@@ -84,7 +84,7 @@ Response:
                     // Whether the action is disabled
                     "disabled": false,
                     // URL to be used for the action
-                    "url": "https://example.com/jenkins/job/gerrit-trigger/5/gerrit-trigger-retrigger-this",
+                    "url": "https://example.com/jenkins/job/gerrit-trigger/5/gerrit-trigger-retrigger-this/index",
                     // Whether to show this action prominently as a button
                     "primary": true
                 }
@@ -169,9 +169,28 @@ pipeline graph for a patchset.
     "statusDescription": "stable",
     "checkLink": "https://example.com/jenkins/job/downstream-job/3/",
     "labelName": "",
-    // Downstream runs have no rerun action — the trigger chain cannot be
-    // reconstructed through Jenkins' rerun mechanism.
-    "actions": [],
+    // A list of actions the client can trigger for this Run
+    "actions": [
+        // Rerun action
+        {
+            // Whether to show the action below the commit message
+            "summary": false,
+            // Which data has to be sent with the request
+            "data": null,
+            // Which method has to be used with the request
+            "method": "POST",
+            // Name of the action
+            "name": "Rerun",
+            // Tooltip for the action
+            "tooltip": "Run the build for the patchset again.",
+            // Whether the action is disabled
+            "disabled": false,
+            // URL to be used for the action
+            "url": "https://example.com/jenkins/job/downstream-job/3/gerrit-trigger-retrigger-this/index",
+            // Whether to show this action prominently as a button
+            "primary": true
+        }
+    ],
     "results": [
         {
             "summary": "",
@@ -207,8 +226,9 @@ than creating a duplicate entry.
 - Only the most recent 100 builds per job are scanned for downstream
   relationships.
 - Traversal depth is capped at 10 levels.
-- Downstream builds have no rerun action, since the trigger chain cannot be
-  reconstructed through Jenkins' rerun mechanism.
+- Rerunning a downstream build reschedules that job alone, with the parameters
+  of the original build. The upstream trigger chain is not replayed, so the new
+  build is not part of the parent→child graph described above.
 
 ## Contributing
 
