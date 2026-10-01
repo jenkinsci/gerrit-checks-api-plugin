@@ -32,8 +32,10 @@ import static org.mockito.Mockito.when;
 import com.google.inject.Provider;
 import hudson.model.Cause;
 import hudson.model.Job;
+import hudson.model.ParametersAction;
 import hudson.model.Result;
 import hudson.model.Run;
+import hudson.model.StringParameterValue;
 import hudson.util.RunList;
 import io.jenkins.plugins.gerritchecksapi.rest.CheckRun;
 import io.jenkins.plugins.gerritchecksapi.rest.GerritMultiBranchCheckRunFactory;
@@ -73,8 +75,21 @@ class DirectCheckRunCollectorTest {
 
   // --- helpers ---
 
+  /** Parameters as set by gerrit-trigger on every build it triggers. */
+  private static ParametersAction gerritParameters(String eventType) {
+    return new ParametersAction(
+        new StringParameterValue("GERRIT_EVENT_TYPE", eventType));
+  }
+
   private Run mockRun(String fullJobName, int buildNumber, Job parentJob) {
+    return mockRun(fullJobName, buildNumber, parentJob,
+        gerritParameters("patchset-created"));
+  }
+
+  private Run mockRun(String fullJobName, int buildNumber, Job parentJob,
+      ParametersAction parameters) {
     Run run = mock(Run.class);
+    when(run.getAction(ParametersAction.class)).thenReturn(parameters);
     when(run.getExternalizableId()).thenReturn(fullJobName + "#" + buildNumber);
     when(run.getNumber()).thenReturn(buildNumber);
     when(run.getParent()).thenReturn(parentJob);
@@ -213,6 +228,69 @@ class DirectCheckRunCollectorTest {
     verify(manager).getHits(queryCaptor.capture(), anyBoolean());
     assertEquals("p:\"refs/changes/01/1/1\" -p:\"change-merged\"",
         queryCaptor.getValue());
+  }
+
+  @Test
+  void collectFor_runWithoutGerritEventTypeParameter_isIgnored() {
+    when(jenkins.getPlugin("gerrit-trigger")).thenReturn(mock(hudson.Plugin.class));
+    when(jenkins.getPlugin("gerrit-code-review")).thenReturn(null);
+
+    // Manually triggered (or parameter-propagated) pipeline that stores the
+    // change ref in a parameter but was not triggered by a Gerrit event.
+    Job job = mockJob("parameterized-job", "parameterized-job");
+    Run run = mockRun("parameterized-job", 7, job,
+        new ParametersAction(
+            new StringParameterValue("GERRIT_REFSPEC", "refs/changes/01/1/1")));
+
+    when(manager.getHits(anyString(), anyBoolean()))
+        .thenReturn(Collections.singletonList(mockHit("parameterized-job", "parameterized-job#7")));
+    when(jenkins.getItemByFullName("parameterized-job", Job.class)).thenReturn(job);
+    when(job.getBuild("7")).thenReturn(run);
+
+    Map<Job<?, ?>, List<CheckRun>> result = collector.collectFor(PatchSetId.create(1, 1));
+
+    assertTrue(result.isEmpty(),
+        "Runs without a GERRIT_EVENT_TYPE parameter must not be collected");
+  }
+
+  @Test
+  void collectFor_runWithEmptyGerritEventTypeParameter_isIgnored() {
+    when(jenkins.getPlugin("gerrit-trigger")).thenReturn(mock(hudson.Plugin.class));
+    when(jenkins.getPlugin("gerrit-code-review")).thenReturn(null);
+
+    Job job = mockJob("parameterized-job", "parameterized-job");
+    Run run = mockRun("parameterized-job", 7, job, gerritParameters(""));
+
+    when(manager.getHits(anyString(), anyBoolean()))
+        .thenReturn(Collections.singletonList(mockHit("parameterized-job", "parameterized-job#7")));
+    when(jenkins.getItemByFullName("parameterized-job", Job.class)).thenReturn(job);
+    when(job.getBuild("7")).thenReturn(run);
+
+    Map<Job<?, ?>, List<CheckRun>> result = collector.collectFor(PatchSetId.create(1, 1));
+
+    assertTrue(result.isEmpty(),
+        "Runs with an empty GERRIT_EVENT_TYPE parameter must not be collected");
+  }
+
+  @Test
+  void collectFor_runWithGerritEventTypeParameter_isCollected() {
+    when(jenkins.getPlugin("gerrit-trigger")).thenReturn(mock(hudson.Plugin.class));
+    when(jenkins.getPlugin("gerrit-code-review")).thenReturn(null);
+
+    Job job = mockJob("trigger-job", "trigger-job");
+    Run run = mockRun("trigger-job", 5, job, gerritParameters("comment-added"));
+
+    when(manager.getHits(anyString(), anyBoolean()))
+        .thenReturn(Collections.singletonList(mockHit("trigger-job", "trigger-job#5")));
+    when(jenkins.getItemByFullName("trigger-job", Job.class)).thenReturn(job);
+    when(job.getBuild("5")).thenReturn(run);
+    when(triggerFactory.create(any(), any(), any(), anyInt()))
+        .thenReturn(createPlainCheckRun(1, 1, "trigger-job#5"));
+
+    Map<Job<?, ?>, List<CheckRun>> result = collector.collectFor(PatchSetId.create(1, 1));
+
+    assertEquals(1, result.size());
+    assertEquals("trigger-job#5", result.get(job).get(0).getExternalId());
   }
 
   @Test

@@ -21,6 +21,8 @@ import com.google.inject.Singleton;
 
 import hudson.model.Cause;
 import hudson.model.Job;
+import hudson.model.ParameterValue;
+import hudson.model.ParametersAction;
 import hudson.model.Result;
 import hudson.model.Run;
 import hudson.security.ACL;
@@ -57,6 +59,7 @@ public class DirectCheckRunCollector implements CheckRunCollector {
     private static final Logger LOG = Logger.getLogger(DirectCheckRunCollector.class);
     private static final int MAX_DOWNSTREAM_DEPTH = 10;
     private static final int MAX_RECENT_BUILDS_PER_JOB = 100;
+    private static final String GERRIT_EVENT_TYPE = "GERRIT_EVENT_TYPE";
 
   private final Jenkins jenkins;
   private final Provider<SearchBackendManager> managerProvider;
@@ -92,7 +95,9 @@ public class DirectCheckRunCollector implements CheckRunCollector {
   private Map<Job<?, ?>, List<CheckRun>> collectGerritTriggerRuns(PatchSetId ps) {
     SearchBackendManager manager = getSearchBackendManager();
     try (ACLContext ctx = ACL.as2(ACL.SYSTEM2)) {
-      Map<Job<?, ?>, List<Run>> hits = queryRuns(String.format("p:\"refs/changes/%s\" -p:\"change-merged\"", ps.toRef()), manager).stream()
+      Map<Job<?, ?>, List<Run>> hits =
+          queryRuns(String.format("p:\"refs/changes/%s\" -p:\"change-merged\"", ps.toRef()), manager).stream()
+              .filter(DirectCheckRunCollector::isTriggeredByGerritEvent)
               .sorted(Comparator.comparing(Run::getNumber))
               .collect(Collectors.groupingBy(Run::getParent));
 
@@ -108,6 +113,28 @@ public class DirectCheckRunCollector implements CheckRunCollector {
       }
       return checkRuns;
     }
+  }
+
+  /**
+   * Checks that a run was really triggered by a Gerrit event.
+   *
+   * <p>The Lucene query for the change ref also matches runs that only store the ref in a build
+   * parameter of their own, e.g. pipelines started with parameters manually or by another job.
+   * Builds triggered by gerrit-trigger always carry a non-empty GERRIT_EVENT_TYPE parameter,
+   * which distinguishes real trigger events from such look-alikes.
+   */
+  private static boolean isTriggeredByGerritEvent(Run<?, ?> run) {
+    ParametersAction parameters = run.getAction(ParametersAction.class);
+    ParameterValue eventType =
+        parameters == null ? null : parameters.getParameter(GERRIT_EVENT_TYPE);
+    Object value = eventType == null ? null : eventType.getValue();
+    if (value == null || value.toString().trim().isEmpty()) {
+      LOG.debug(String.format(
+          "Ignoring run %s: no non-empty %s parameter found",
+          run.getExternalizableId(), GERRIT_EVENT_TYPE));
+      return false;
+    }
+    return true;
   }
 
   @SuppressWarnings("rawtypes")
