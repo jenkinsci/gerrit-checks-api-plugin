@@ -15,7 +15,9 @@
 package io.jenkins.plugins.gerritchecksapi.rest;
 
 public class GerritTriggerRerunAction extends RerunAction {
-  public static final String PATH = "gerrit-trigger-retrigger-this";
+  public static final String NAME = "gerrit-trigger-retrigger-this";
+  /** Index route of the action, relative to the URL of the Run. */
+  public static final String PATH = NAME + "/index";
 
   protected GerritTriggerRerunAction(String runUrl) {
     super(false, String.format("%s%s", runUrl, PATH));
