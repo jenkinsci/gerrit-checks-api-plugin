@@ -386,10 +386,11 @@ public final class PipelineStageCheckRuns {
       checkRun.setExternalId(AbstractCheckRunFactory.childId(runKey, stageKey));
       checkRun.setCheckName(checkName);
       checkRun.setCheckDescription(parent.getCheckDescription());
-      checkRun.setCheckLink(checkLink(runUrl, id()));
+      checkRun.setCheckLink(stageUrl(runUrl, id()));
       checkRun.setStatus(!finished && building ? RunStatus.RUNNING : RunStatus.COMPLETED);
       checkRun.setStatusDescription(parent.getStatusDescription());
-      checkRun.setStatusLink(parent.getStatusLink());
+      // Not the status link of the run: it has to lead to the stage itself.
+      checkRun.setStatusLink(stageUrl(runUrl, id()));
       checkRun.setLabelName(parent.getLabelName());
       // The check run of the build carries the actions, e.g. the one to rerun it.
       checkRun.setActions(List.of());
@@ -397,7 +398,7 @@ public final class PipelineStageCheckRuns {
       checkRun.setStartedTimestamp(parent.getStartedTimestamp());
       checkRun.setFinishedTimestamp(parent.getFinishedTimestamp());
       checkRun.setResults(
-          List.of(computeResult(stageKey, runUrl, category(finished), message())));
+          List.of(computeResult(stageKey, runUrl, id(), category(finished), message())));
       return checkRun;
     }
   }
@@ -407,30 +408,42 @@ public final class PipelineStageCheckRuns {
    * failed stage would be shown as successful without one.
    */
   private static CheckResult computeResult(
-      String resultId, String runUrl, Category category, String message) {
+      String resultId, String runUrl, String nodeId, Category category, String message) {
     CheckResult result = new CheckResult();
     result.setExternalId(resultId);
     result.setCategory(category);
     result.setMessage(message);
-    result.setLinks(computeResultLinks(runUrl));
+    result.setLinks(computeResultLinks(runUrl, nodeId));
     return result;
   }
 
-  private static List<Link> computeResultLinks(String runUrl) {
+  private static List<Link> computeResultLinks(String runUrl, String nodeId) {
     List<Link> links = new ArrayList<>();
+    Link stageLink = new Link();
+    stageLink.setUrl(stageUrl(runUrl, nodeId));
+    stageLink.setTooltip("Stage log.");
+    stageLink.setIcon(LinkIcon.CODE);
+    stageLink.setPrimary(true);
+    links.add(stageLink);
+
     Link consoleLogLink = new Link();
     consoleLogLink.setUrl(String.format("%sconsole", runUrl));
     consoleLogLink.setTooltip("Build log.");
     consoleLogLink.setIcon(LinkIcon.CODE);
-    consoleLogLink.setPrimary(true);
+    consoleLogLink.setPrimary(false);
     links.add(consoleLogLink);
     return links;
   }
 
-  /** Links to the stage in the Pipeline stage view, if that view is installed. */
-  private static String checkLink(String runUrl, String nodeId) {
+  /**
+   * Links to the stage itself rather than to the run it belongs to. The stage view shows the stage
+   * in the context of the pipeline, so it is preferred; it is only available when the plugin
+   * providing it is installed. The flow node of the stage is part of the Pipeline API itself and
+   * shows the log of the stage.
+   */
+  private static String stageUrl(String runUrl, String nodeId) {
     return isPluginInstalled(STAGE_VIEW_PLUGIN)
         ? String.format("%sstages/?selected-node=%s", runUrl, nodeId)
-        : runUrl;
+        : String.format("%sexecution/node/%s/", runUrl, nodeId);
   }
 }
