@@ -27,6 +27,9 @@ import java.util.List;
 import jenkins.model.Jenkins;
 
 public abstract class AbstractCheckRunFactory {
+  /** Plugin providing the flow graph that the stage results are computed from. */
+  static final String WORKFLOW_JOB_PLUGIN = "workflow-job";
+
   private final Jenkins jenkins = Jenkins.get();
 
   public abstract CheckRun create(PatchSetId ps, Job<?, ?> job, Run<?, ?> run, int attempt);
@@ -59,28 +62,64 @@ public abstract class AbstractCheckRunFactory {
         .toString();
   }
 
-  // Currently only a single result can be returned. Having multiple results per build might
-  // require introducing additional functionality to Jenkins
   protected List<CheckResult> computeCheckResults(Run<?, ?> run) {
-    List<CheckResult> results = new ArrayList<CheckResult>();
-    if (run.hasntStartedYet() || run.isBuilding()) {
-      return results;
-    }
-    CheckResult result = new CheckResult();
-    result.setExternalId(run.getExternalizableId());
-    Result res = run.getResult();
-    if (res != null) {
-      result.setCategory(Category.fromResult(res));
-    }
-    result.setLinks(computeResultLinks(run));
-    results.add(result);
-    return results;
+    return computeCheckResults(run, run.getExternalizableId(), getAbsoluteRunUrl(run));
   }
 
-  private List<Link> computeResultLinks(Run<?, ?> run) {
+  /**
+   * The result of a run. The stages of a Pipeline build are not results of this run, but check runs
+   * of their own, see {@link #computeStageCheckRuns}.
+   *
+   * @param resultIdPrefix prefix of the result ID, which has to be unique within the CheckRun. The
+   *     ID the CheckRun was created with is used for it.
+   */
+  public static List<CheckResult> computeCheckResults(
+      Run<?, ?> run, String resultIdPrefix, String runUrl) {
+    if (run.hasntStartedYet() || run.isBuilding()) {
+      return List.of();
+    }
+    return List.of(computeRunResult(run, resultIdPrefix, runUrl));
+  }
+
+  /**
+   * Computes the check runs of the stages of a Pipeline build, which are to be added next to the
+   * check run of the run itself.
+   *
+   * @param parent the check run of the run itself
+   * @return the check runs of the stages, or an empty list for runs that are not Pipeline builds
+   *     and for Jenkins instances without Pipeline installed
+   */
+  public static List<CheckRun> computeStageCheckRuns(
+      Jenkins jenkins, PatchSetId ps, Run<?, ?> run, CheckRun parent, String runUrl) {
+    // Guarding the reference to the (optional) Pipeline API.
+    if (jenkins.getPlugin(WORKFLOW_JOB_PLUGIN) == null) {
+      return List.of();
+    }
+    return PipelineStageCheckRuns.compute(ps, run, parent, runUrl);
+  }
+
+  /**
+   * The ID of a check run that is a child of another one, e.g. a downstream build or a stage. The
+   * parent and the run parts are the runs' externalizable IDs.
+   */
+  public static String childId(String parentKey, String childKey) {
+    return String.format("{\"parent\":\"%s\",\"run\":\"%s\"}", parentKey, childKey);
+  }
+
+  /** The result of the whole run. While a run is still building, there is no result yet. */
+  private static CheckResult computeRunResult(Run<?, ?> run, String resultIdPrefix, String runUrl) {
+    CheckResult result = new CheckResult();
+    result.setExternalId(resultIdPrefix);
+    Result res = run.getResult();
+    result.setCategory(res != null ? Category.fromResult(res) : Category.INFO);
+    result.setLinks(computeResultLinks(runUrl));
+    return result;
+  }
+
+  private static List<Link> computeResultLinks(String runUrl) {
     List<Link> links = new ArrayList<>();
     Link consoleLogLink = new Link();
-    consoleLogLink.setUrl(String.format("%sconsole", getAbsoluteRunUrl(run)));
+    consoleLogLink.setUrl(String.format("%sconsole", runUrl));
     consoleLogLink.setTooltip("Build log.");
     consoleLogLink.setIcon(LinkIcon.CODE);
     consoleLogLink.setPrimary(true);
