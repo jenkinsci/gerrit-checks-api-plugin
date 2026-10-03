@@ -15,6 +15,7 @@
 package io.jenkins.plugins.gerritchecksapi.rest;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -50,6 +51,8 @@ class PipelineStageCheckRunsTest {
   private static final PatchSetId PS = PatchSetId.create(101, 4);
   private static final String RUN_KEY = "my-job#7";
   private static final String RUN_URL = "https://jenkins/job/my-job/7/";
+  /** Without the stage view plugin, a stage links to its flow node. */
+  private static final String STAGE_URL = RUN_URL + "execution/node/2/";
   private static final String STAGE_STATUS_TAG = "STAGE_STATUS";
 
   private FlowExecution execution;
@@ -116,9 +119,9 @@ class PipelineStageCheckRunsTest {
     assertEquals(parent.getAttempt(), checkRun.getAttempt());
     assertEquals(RunStatus.COMPLETED, checkRun.getStatus());
     assertEquals(parent.getCheckDescription(), checkRun.getCheckDescription());
-    assertEquals(parent.getStatusLink(), checkRun.getStatusLink());
+    assertEquals(STAGE_URL, checkRun.getStatusLink(), "The stage, not the run");
     assertEquals(parent.getStartedTimestamp(), checkRun.getStartedTimestamp());
-    assertEquals(RUN_URL, checkRun.getCheckLink(), "Without a stage view, link to the run");
+    assertEquals(STAGE_URL, checkRun.getCheckLink());
     assertTrue(checkRun.getActions().isEmpty(), "The run carries the actions");
   }
 
@@ -411,16 +414,21 @@ class PipelineStageCheckRunsTest {
   // --- links ---
 
   @Test
-  void compute_resultLinksToBuildLog() {
+  void compute_resultLinksToTheStage() {
     BlockStartNode stage = stage("2", "Build");
     BlockEndNode<?> end = end("3", stage);
 
     CheckRun checkRun = checkRunNamed(compute(stage, end), "Build");
 
-    Link console = linkWithUrl(checkRun.getResults().get(0).getLinks(), RUN_URL + "console");
-    assertNotNull(console, "Stage results link to the build log");
-    assertEquals(LinkIcon.CODE, console.getIcon());
-    assertTrue(console.isPrimary());
+    List<Link> links = checkRun.getResults().get(0).getLinks();
+    Link stageLink = linkWithUrl(links, STAGE_URL);
+    assertNotNull(stageLink, "The stage is linked first");
+    assertEquals(LinkIcon.CODE, stageLink.getIcon());
+    assertTrue(stageLink.isPrimary());
+
+    Link console = linkWithUrl(links, RUN_URL + "console");
+    assertNotNull(console, "The build log is still reachable");
+    assertFalse(console.isPrimary());
   }
 
   // --- helpers ---

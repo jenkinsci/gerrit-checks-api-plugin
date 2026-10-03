@@ -154,7 +154,7 @@ ID of the stage's flow node:
     "checkLink": "https://example.com/jenkins/job/my-pipeline/7/stages/?selected-node=12",
     "status": "COMPLETED",
     "statusDescription": "broken since this build",
-    "statusLink": "https://example.com/jenkins/job/my-pipeline/7/",
+    "statusLink": "https://example.com/jenkins/job/my-pipeline/7/stages/?selected-node=12",
     // Stages are not rerun on their own, the Run carries the actions
     "actions": [],
     "scheduledTimestamp": "2022-11-07T13:04:12.609Z",
@@ -169,9 +169,15 @@ ID of the stage's flow node:
             "links": [
                 {
                     "icon": "CODE",
+                    "tooltip": "Stage log.",
+                    "url": "https://example.com/jenkins/job/my-pipeline/7/stages/?selected-node=12",
+                    "primary": true
+                },
+                {
+                    "icon": "CODE",
                     "tooltip": "Build log.",
                     "url": "https://example.com/jenkins/job/my-pipeline/7/console",
-                    "primary": true
+                    "primary": false
                 }
             ]
         }
@@ -191,10 +197,13 @@ then, e.g. because they run in a loop, are numbered (`Test`, `Test (2)`). Only
 the second and later occurrences are numbered, so the name of a stage does not
 change once it has been reported.
 
-The `checkLink` of a stage points at its entry in the Pipeline stage view
-(`.../stages/?selected-node=<nodeId>`). That requires the
-[pipeline-graph-view](https://plugins.jenkins.io/pipeline-graph-view) plugin.
-Without it, the link points at the build.
+All three links of a stage -- `checkLink`, `statusLink` and the first link of
+its result -- point at the stage itself, not at the Run it belongs to. They lead
+to the entry of the stage in the Pipeline stage view
+(`.../stages/?selected-node=<nodeId>`), which requires the
+[pipeline-graph-view](https://plugins.jenkins.io/pipeline-graph-view) plugin, and
+to the flow node of the stage (`.../execution/node/<nodeId>/`) without it. The
+build log is linked as well, as the second link of the result.
 
 ## Configuration
 
