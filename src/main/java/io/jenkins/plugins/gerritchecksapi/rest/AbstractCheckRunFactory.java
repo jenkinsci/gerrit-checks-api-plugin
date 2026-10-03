@@ -17,7 +17,9 @@ package io.jenkins.plugins.gerritchecksapi.rest;
 import hudson.model.Job;
 import hudson.model.Result;
 import hudson.model.Run;
+import io.jenkins.plugins.gerritchecksapi.GerritChecksConfiguration;
 import io.jenkins.plugins.gerritchecksapi.PatchSetId;
+import io.jenkins.plugins.gerritchecksapi.StageReporting;
 import io.jenkins.plugins.gerritchecksapi.rest.CheckResult.Category;
 import io.jenkins.plugins.gerritchecksapi.rest.CheckRun.RunStatus;
 import io.jenkins.plugins.gerritchecksapi.rest.Link.LinkIcon;
@@ -95,7 +97,11 @@ public abstract class AbstractCheckRunFactory {
     if (jenkins.getPlugin(WORKFLOW_JOB_PLUGIN) == null) {
       return List.of();
     }
-    return PipelineStageCheckRuns.compute(ps, run, parent, runUrl);
+    StageReporting reporting = GerritChecksConfiguration.resolve(run.getParent());
+    if (!reporting.isReportStagesEnabled()) {
+      return List.of();
+    }
+    return PipelineStageCheckRuns.compute(ps, run, parent, runUrl, reporting);
   }
 
   /**

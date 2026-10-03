@@ -16,6 +16,7 @@ package io.jenkins.plugins.gerritchecksapi.rest;
 
 import hudson.model.Run;
 import io.jenkins.plugins.gerritchecksapi.PatchSetId;
+import io.jenkins.plugins.gerritchecksapi.StageReporting;
 import io.jenkins.plugins.gerritchecksapi.rest.CheckResult.Category;
 import io.jenkins.plugins.gerritchecksapi.rest.CheckRun.RunStatus;
 import io.jenkins.plugins.gerritchecksapi.rest.Link.LinkIcon;
@@ -65,6 +66,9 @@ public final class PipelineStageCheckRuns {
   /** Label of the synthetic block wrapping the branches of a parallel step. */
   private static final String PARALLEL_LABEL = "Parallel";
 
+  /** Prefix of the names of the stages Jenkins itself adds to a declarative pipeline. */
+  private static final String DECLARATIVE_PREFIX = "Declarative: ";
+
   private PipelineStageCheckRuns() {}
 
   /**
@@ -75,7 +79,8 @@ public final class PipelineStageCheckRuns {
    * @return the check runs of the stages, or an empty list if the run is not a Pipeline build or
    *     does not expose any stage
    */
-  public static List<CheckRun> compute(PatchSetId ps, Run<?, ?> run, CheckRun parent, String runUrl) {
+  public static List<CheckRun> compute(
+      PatchSetId ps, Run<?, ?> run, CheckRun parent, String runUrl, StageReporting reporting) {
     if (!(run instanceof WorkflowRun)) {
       return List.of();
     }
@@ -85,7 +90,8 @@ public final class PipelineStageCheckRuns {
         run.getExternalizableId(),
         run.isBuilding(),
         parent,
-        runUrl);
+        runUrl,
+        reporting);
   }
 
   static List<CheckRun> compute(
@@ -94,7 +100,8 @@ public final class PipelineStageCheckRuns {
       String runKey,
       boolean building,
       CheckRun parent,
-      String runUrl) {
+      String runUrl,
+      StageReporting reporting) {
     if (execution == null) {
       return List.of();
     }
@@ -103,6 +110,12 @@ public final class PipelineStageCheckRuns {
     if (stages.isEmpty()) {
       return List.of();
     }
+    stages = applyReportingSettings(stages, reporting);
+    if (stages.isEmpty()) {
+      return List.of();
+    }
+    // Errors of stages that are not reported are attributed to the stage enclosing
+    // them, if there is one.
     collectFailures(nodes, stages);
     Set<String> finishedStages = findFinishedStages(nodes);
     nameStages(stages);
@@ -114,6 +127,34 @@ public final class PipelineStageCheckRuns {
               ps, parent, runKey, runUrl, finishedStages.contains(stage.id()), building));
     }
     return checkRuns;
+  }
+
+  private static List<Stage> applyReportingSettings(List<Stage> stages, StageReporting reporting) {
+    Map<String, Stage> allStages = indexById(stages);
+    int maxDepth = reporting.maxReportedDepth();
+    boolean skipDeclarative = reporting.isSkipDeclarativeStagesEnabled();
+    if (maxDepth <= 0 && !skipDeclarative) {
+      return stages;
+    }
+    List<Stage> reported = new ArrayList<>();
+    for (Stage stage : stages) {
+      if (skipDeclarative && stage.isDeclarative()) {
+        continue;
+      }
+      if (maxDepth > 0 && stage.depth(allStages) > maxDepth) {
+        continue;
+      }
+      reported.add(stage);
+    }
+    return reported;
+  }
+
+  private static Map<String, Stage> indexById(List<Stage> stages) {
+    Map<String, Stage> stagesById = new HashMap<>();
+    for (Stage stage : stages) {
+      stagesById.put(stage.id(), stage);
+    }
+    return stagesById;
   }
 
   private static List<FlowNode> walk(FlowExecution execution) {
@@ -177,10 +218,7 @@ public final class PipelineStageCheckRuns {
   }
 
   private static void collectFailures(List<FlowNode> nodes, List<Stage> stages) {
-    Map<String, Stage> stagesById = new HashMap<>();
-    for (Stage stage : stages) {
-      stagesById.put(stage.id(), stage);
-    }
+    Map<String, Stage> stagesById = indexById(stages);
     for (FlowNode node : nodes) {
       ErrorAction error = node.getPersistentAction(ErrorAction.class);
       WarningAction warning = node.getPersistentAction(WarningAction.class);
@@ -287,6 +325,22 @@ public final class PipelineStageCheckRuns {
 
     private String id() {
       return node.getId();
+    }
+
+    /** 1 for a stage that is not nested inside another stage. */
+    private int depth(Map<String, Stage> allStages) {
+      int depth = 1;
+      for (BlockStartNode block : node.iterateEnclosingBlocks()) {
+        if (allStages.containsKey(block.getId())) {
+          depth++;
+        }
+      }
+      return depth;
+    }
+
+    /** The stages that Jenkins itself adds to a declarative pipeline. */
+    private boolean isDeclarative() {
+      return nameOf(node).startsWith(DECLARATIVE_PREFIX);
     }
 
     /** Node IDs are handed out by a counter, so they order the stages by creation. */

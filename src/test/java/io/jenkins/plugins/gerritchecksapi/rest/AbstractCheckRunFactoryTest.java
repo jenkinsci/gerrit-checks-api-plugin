@@ -22,13 +22,17 @@ import static org.mockito.Mockito.when;
 import hudson.Plugin;
 import hudson.model.Result;
 import hudson.model.Run;
+import io.jenkins.plugins.gerritchecksapi.Inheritable;
 import io.jenkins.plugins.gerritchecksapi.PatchSetId;
+import io.jenkins.plugins.gerritchecksapi.StageDepth;
+import io.jenkins.plugins.gerritchecksapi.StageReportingJobProperty;
 import io.jenkins.plugins.gerritchecksapi.rest.CheckResult.Category;
 import java.util.List;
 import jenkins.model.Jenkins;
 import org.jenkinsci.plugins.workflow.flow.FlowExecution;
 import org.jenkinsci.plugins.workflow.graph.BlockEndNode;
 import org.jenkinsci.plugins.workflow.graph.BlockStartNode;
+import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -120,6 +124,35 @@ class AbstractCheckRunFactoryTest {
   }
 
   @Test
+  void computeStageCheckRuns_stagesDisabledForTheJob_returnsEmpty() {
+    when(jenkins.getPlugin(AbstractCheckRunFactory.WORKFLOW_JOB_PLUGIN))
+        .thenReturn(mock(Plugin.class));
+    WorkflowRun run = pipeline();
+    // Built before the when() chain: Mockito does not allow nested stubbing.
+    WorkflowJob job = jobReporting(Inheritable.DISABLED);
+    when(run.getParent()).thenReturn(job);
+    BlockStartNode stage = TestFlowNodes.stage(execution, "2", "Build");
+    when(execution.getCurrentHeads()).thenReturn(List.of(stage));
+
+    assertTrue(computeStageCheckRuns(run).isEmpty());
+  }
+
+  @Test
+  void computeStageCheckRuns_stagesEnabledForTheJob_returnsStageCheckRun() {
+    when(jenkins.getPlugin(AbstractCheckRunFactory.WORKFLOW_JOB_PLUGIN))
+        .thenReturn(mock(Plugin.class));
+    WorkflowRun run = pipeline();
+    // Built before the when() chain: Mockito does not allow nested stubbing.
+    WorkflowJob job = jobReporting(Inheritable.ENABLED);
+    when(run.getParent()).thenReturn(job);
+    BlockStartNode stage = TestFlowNodes.stage(execution, "2", "Build");
+    when(execution.getCurrentHeads()).thenReturn(List.of(stage));
+    when(execution.iterateEnclosingBlocks(stage)).thenReturn(List.of());
+
+    assertEquals(1, computeStageCheckRuns(run).size());
+  }
+
+  @Test
   void computeStageCheckRuns_nonPipelineRun_returnsEmpty() {
     when(jenkins.getPlugin(AbstractCheckRunFactory.WORKFLOW_JOB_PLUGIN))
         .thenReturn(mock(Plugin.class));
@@ -137,6 +170,14 @@ class AbstractCheckRunFactoryTest {
     CheckRun parent = new CheckRun();
     parent.setAttempt(1);
     return AbstractCheckRunFactory.computeStageCheckRuns(jenkins, PS, run, parent, RUN_URL);
+  }
+
+  private WorkflowJob jobReporting(Inheritable reportStages) {
+    WorkflowJob job = mock(WorkflowJob.class);
+    when(job.getProperty(StageReportingJobProperty.class))
+        .thenReturn(
+            new StageReportingJobProperty(reportStages, StageDepth.INHERIT, 0, Inheritable.INHERIT));
+    return job;
   }
 
   private WorkflowRun pipeline() {
