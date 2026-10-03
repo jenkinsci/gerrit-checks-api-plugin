@@ -23,7 +23,10 @@ import static org.mockito.Mockito.when;
 
 import hudson.model.Result;
 import hudson.model.Run;
+import io.jenkins.plugins.gerritchecksapi.Inheritable;
 import io.jenkins.plugins.gerritchecksapi.PatchSetId;
+import io.jenkins.plugins.gerritchecksapi.StageDepth;
+import io.jenkins.plugins.gerritchecksapi.StageReporting;
 import io.jenkins.plugins.gerritchecksapi.rest.CheckResult.Category;
 import io.jenkins.plugins.gerritchecksapi.rest.CheckRun.RunStatus;
 import io.jenkins.plugins.gerritchecksapi.rest.Link.LinkIcon;
@@ -73,7 +76,9 @@ class PipelineStageCheckRunsTest {
   void compute_nonPipelineRun_returnsEmpty() {
     Run<?, ?> run = mock(Run.class);
 
-    assertTrue(PipelineStageCheckRuns.compute(PS, run, parent, RUN_URL).isEmpty());
+    assertTrue(
+        PipelineStageCheckRuns.compute(PS, run, parent, RUN_URL, StageReporting.defaults())
+            .isEmpty());
   }
 
   @Test
@@ -81,7 +86,9 @@ class PipelineStageCheckRunsTest {
     WorkflowRun run = mock(WorkflowRun.class);
     when(run.getExecution()).thenReturn(null);
 
-    assertTrue(PipelineStageCheckRuns.compute(PS, run, parent, RUN_URL).isEmpty());
+    assertTrue(
+        PipelineStageCheckRuns.compute(PS, run, parent, RUN_URL, StageReporting.defaults())
+            .isEmpty());
   }
 
   @Test
@@ -172,7 +179,7 @@ class PipelineStageCheckRunsTest {
   void compute_runningStage_isRunningAndInformational() {
     BlockStartNode stage = stage("2", "Deploy");
 
-    CheckRun checkRun = checkRunNamed(compute(true, stage), "Deploy");
+    CheckRun checkRun = checkRunNamed(compute(StageReporting.defaults(), true, stage), "Deploy");
 
     assertEquals(RunStatus.RUNNING, checkRun.getStatus());
     assertEquals(Category.INFO, checkRun.getResults().get(0).getCategory());
@@ -183,7 +190,7 @@ class PipelineStageCheckRunsTest {
     // A build that was killed can leave blocks without an end node behind.
     BlockStartNode stage = stage("2", "Deploy");
 
-    CheckRun checkRun = checkRunNamed(compute(false, stage), "Deploy");
+    CheckRun checkRun = checkRunNamed(compute(StageReporting.defaults(), false, stage), "Deploy");
 
     assertEquals(RunStatus.COMPLETED, checkRun.getStatus());
   }
@@ -337,6 +344,70 @@ class PipelineStageCheckRunsTest {
     assertEquals(List.of("First", "Second"), names);
   }
 
+  // --- reporting settings ---
+
+  @Test
+  void compute_topLevelOnly_omitsNestedStages() {
+    BlockStartNode outer = stage("2", "Test");
+    BlockStartNode inner = stage("4", "Unit");
+    BlockEndNode<?> outerEnd = end("3", outer);
+    enclosing(inner, outer);
+    enclosing(outerEnd, outer);
+    StageReporting reporting =
+        new StageReporting(Inheritable.ENABLED, StageDepth.TOP_LEVEL, 0, Inheritable.DISABLED);
+
+    List<String> names = names(compute(reporting, false, outer, inner, outerEnd));
+
+    assertEquals(List.of("Test"), names);
+  }
+
+  @Test
+  void compute_maxDepth_omitsStagesBelowIt() {
+    BlockStartNode first = stage("2", "First");
+    BlockStartNode second = stage("4", "Second");
+    BlockStartNode third = stage("6", "Third");
+    BlockEndNode<?> end = end("3", first);
+    enclosing(second, first);
+    enclosing(third, second, first);
+    enclosing(end, first);
+    StageReporting reporting =
+        new StageReporting(Inheritable.ENABLED, StageDepth.MAX_DEPTH, 2, Inheritable.DISABLED);
+
+    List<String> names = names(compute(reporting, false, first, second, third, end));
+
+    assertEquals(List.of("First", "Second"), names);
+  }
+
+  @Test
+  void compute_omittedNestedStage_reportsItsErrorOnTheParent() {
+    BlockStartNode outer = stage("2", "Test");
+    BlockStartNode inner = stage("4", "Unit");
+    BlockEndNode<?> innerEnd = end("5", inner);
+    innerEnd.addAction(new ErrorAction(new RuntimeException("assertion failed")));
+    enclosing(innerEnd, inner, outer);
+    enclosing(inner, outer);
+    StageReporting reporting =
+        new StageReporting(Inheritable.ENABLED, StageDepth.TOP_LEVEL, 0, Inheritable.DISABLED);
+
+    CheckRun checkRun = checkRunNamed(compute(reporting, false, outer, inner, innerEnd), "Test");
+
+    assertEquals(Category.ERROR, checkRun.getResults().get(0).getCategory());
+  }
+
+  @Test
+  void compute_skipDeclarativeStages_omitsThem() {
+    BlockStartNode checkout = stage("2", "Declarative: Checkout SCM");
+    BlockStartNode build = stage("4", "Build");
+    BlockEndNode<?> checkoutEnd = end("3", checkout);
+    BlockEndNode<?> buildEnd = end("5", build);
+    StageReporting reporting =
+        new StageReporting(Inheritable.ENABLED, StageDepth.ALL, 0, Inheritable.ENABLED);
+
+    List<String> names = names(compute(reporting, false, checkout, build, checkoutEnd, buildEnd));
+
+    assertEquals(List.of("Build"), names);
+  }
+
   // --- links ---
 
   @Test
@@ -355,12 +426,13 @@ class PipelineStageCheckRunsTest {
   // --- helpers ---
 
   private List<CheckRun> compute(FlowNode... nodes) {
-    return compute(false, nodes);
+    return compute(StageReporting.defaults(), false, nodes);
   }
 
-  private List<CheckRun> compute(boolean building, FlowNode... nodes) {
+  private List<CheckRun> compute(StageReporting reporting, boolean building, FlowNode... nodes) {
     when(execution.getCurrentHeads()).thenReturn(Arrays.asList(nodes));
-    return PipelineStageCheckRuns.compute(PS, execution, RUN_KEY, building, parent, RUN_URL);
+    return PipelineStageCheckRuns.compute(
+        PS, execution, RUN_KEY, building, parent, RUN_URL, reporting);
   }
 
   private BlockStartNode stage(String id, String name) {

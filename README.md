@@ -196,6 +196,27 @@ The `checkLink` of a stage points at its entry in the Pipeline stage view
 [pipeline-graph-view](https://plugins.jenkins.io/pipeline-graph-view) plugin.
 Without it, the link points at the build.
 
+## Configuration
+
+Which stages are reported can be configured globally, for a folder and for a
+single job. A folder is where a multibranch Pipeline is configured, since its
+branch jobs cannot be configured individually. Every setting can be left to be
+inherited, in which case the enclosing folder decides and finally the global
+configuration.
+
+The global defaults are found under *Manage Jenkins » System*, the settings of a
+job under *Properties* on its configuration page and the settings of a folder or
+multibranch project on its own configuration page.
+
+| Setting | Meaning |
+| --- | --- |
+| Report stages | Whether the stages are reported as check runs at all. Turning this off reports the build as a single check run, as it was before. |
+| Stage depth | `All stages` reports every stage. `Top level stages only` leaves out the stages nested inside another stage, and `Up to a maximum depth` reports the stages up to the given depth. A build with tens of nested stages is difficult to read in Gerrit. |
+| Skip the stages Jenkins adds to a declarative pipeline | Leaves out the stages that Jenkins itself adds, e.g. `Declarative: Checkout SCM` and `Declarative: Post Actions`. |
+
+An error of a stage that is left out is reported on the stage enclosing it, so a
+nested stage that fails still turns its parent stage red.
+
 ## Downstream Build Discovery
 
 When a build directly triggered by Gerrit causes downstream builds (via

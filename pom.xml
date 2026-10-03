@@ -95,6 +95,13 @@
       <artifactId>workflow-job</artifactId>
       <optional>true</optional>
     </dependency>
+    <!-- Optional: the stage reporting settings of a folder, which is where a
+         multibranch pipeline is configured. -->
+    <dependency>
+      <groupId>org.jenkins-ci.plugins</groupId>
+      <artifactId>cloudbees-folder</artifactId>
+      <optional>true</optional>
+    </dependency>
     <dependency>
       <groupId>org.mockito</groupId>
       <artifactId>mockito-core</artifactId>
