@@ -23,20 +23,15 @@ import hudson.model.Cause;
 import hudson.model.Job;
 import hudson.model.ParameterValue;
 import hudson.model.ParametersAction;
-import hudson.model.Result;
 import hudson.model.Run;
 import hudson.security.ACL;
 import hudson.security.ACLContext;
 import io.jenkins.plugins.gerritchecksapi.rest.Action;
 import io.jenkins.plugins.gerritchecksapi.rest.CheckRun;
-import io.jenkins.plugins.gerritchecksapi.rest.CheckResult;
-import io.jenkins.plugins.gerritchecksapi.rest.CheckResult.Category;
 import io.jenkins.plugins.gerritchecksapi.rest.AbstractCheckRunFactory;
 import io.jenkins.plugins.gerritchecksapi.rest.GerritMultiBranchCheckRunFactory;
 import io.jenkins.plugins.gerritchecksapi.rest.GerritTriggerCheckRunFactory;
 import io.jenkins.plugins.gerritchecksapi.rest.GerritTriggerRerunAction;
-import io.jenkins.plugins.gerritchecksapi.rest.Link;
-import io.jenkins.plugins.gerritchecksapi.rest.Link.LinkIcon;
 import io.jenkins.plugins.gerritchecksapi.rest.RerunAction;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -81,18 +76,27 @@ public class DirectCheckRunCollector implements CheckRunCollector {
   @Override
   public Map<Job<?, ?>, List<CheckRun>> collectFor(PatchSetId ps) {
     Map<Job<?, ?>, List<CheckRun>> checkRuns = new HashMap<>();
+    List<Map.Entry<Job<?, ?>, CheckRun>> stageCheckRuns = new ArrayList<>();
     if (jenkins.getPlugin("gerrit-trigger") != null) {
-      checkRuns.putAll(collectGerritTriggerRuns(ps));
+      checkRuns.putAll(collectGerritTriggerRuns(ps, stageCheckRuns));
     }
     if (jenkins.getPlugin("gerrit-code-review") != null) {
-      checkRuns.putAll(collectGerritMultiBranchRuns(ps));
+      checkRuns.putAll(collectGerritMultiBranchRuns(ps, stageCheckRuns));
     }
-    collectDownstreamCheckRuns(ps, checkRuns);
+    collectDownstreamCheckRuns(ps, checkRuns, stageCheckRuns);
+    // The stages are not runs of their own, so they are added only now, when the
+    // downstream traversal above is done and cannot pick them up.
+    for (Map.Entry<Job<?, ?>, CheckRun> stageCheckRun : stageCheckRuns) {
+      checkRuns
+          .computeIfAbsent(stageCheckRun.getKey(), job -> new ArrayList<>())
+          .add(stageCheckRun.getValue());
+    }
     return checkRuns;
   }
 
   @SuppressWarnings("rawtypes")
-  private Map<Job<?, ?>, List<CheckRun>> collectGerritTriggerRuns(PatchSetId ps) {
+  private Map<Job<?, ?>, List<CheckRun>> collectGerritTriggerRuns(
+      PatchSetId ps, List<Map.Entry<Job<?, ?>, CheckRun>> stageCheckRuns) {
     SearchBackendManager manager = getSearchBackendManager();
     try (ACLContext ctx = ACL.as2(ACL.SYSTEM2)) {
       Map<Job<?, ?>, List<Run>> hits =
@@ -106,8 +110,10 @@ public class DirectCheckRunCollector implements CheckRunCollector {
         List<Run> runs = entry.getValue();
         List<CheckRun> checks = new ArrayList<>();
         for (int i = 0; i < runs.size(); i++) {
-          checks.add(
-              gerritTriggerCheckRunFactory.create(ps, runs.get(i).getParent(), runs.get(i), i + 1));
+          Run run = runs.get(i);
+          CheckRun checkRun = gerritTriggerCheckRunFactory.create(ps, run.getParent(), run, i + 1);
+          checks.add(checkRun);
+          addStageCheckRuns(ps, run, checkRun, entry.getKey(), stageCheckRuns);
         }
         checkRuns.put(entry.getKey(), checks);
       }
@@ -138,7 +144,8 @@ public class DirectCheckRunCollector implements CheckRunCollector {
   }
 
   @SuppressWarnings("rawtypes")
-  private Map<Job<?, ?>, List<CheckRun>> collectGerritMultiBranchRuns(PatchSetId ps) {
+  private Map<Job<?, ?>, List<CheckRun>> collectGerritMultiBranchRuns(
+      PatchSetId ps, List<Map.Entry<Job<?, ?>, CheckRun>> stageCheckRuns) {
     SearchBackendManager manager = getSearchBackendManager();
     try (ACLContext ctx = ACL.as2(ACL.SYSTEM2)) {
       Map<Job<?, ?>, List<Run>> runs =
@@ -147,17 +154,38 @@ public class DirectCheckRunCollector implements CheckRunCollector {
 
       Map<Job<?, ?>, List<CheckRun>> checkRuns = new HashMap<>();
       for (Map.Entry<Job<?, ?>, List<Run>> entry : runs.entrySet()) {
-        checkRuns.put(
-            entry.getKey(),
-            entry.getValue().stream()
-                .map(
-                    run ->
-                        gerritMultiBranchCheckRunFactory.create(
-                            ps, run.getParent(), run, run.getNumber()))
-                .collect(Collectors.toList()));
+        List<CheckRun> checks = new ArrayList<>();
+        for (Run run : entry.getValue()) {
+          CheckRun checkRun =
+              gerritMultiBranchCheckRunFactory.create(ps, run.getParent(), run, run.getNumber());
+          checks.add(checkRun);
+          addStageCheckRuns(ps, run, checkRun, entry.getKey(), stageCheckRuns);
+        }
+        checkRuns.put(entry.getKey(), checks);
       }
       return checkRuns;
     }
+  }
+
+  /**
+   * Collects the check runs of the stages of a Pipeline build. They are kept aside until the whole
+   * run has been collected, see {@link #collectFor}.
+   */
+  private void addStageCheckRuns(
+      PatchSetId ps,
+      Run<?, ?> run,
+      CheckRun parent,
+      Job<?, ?> job,
+      List<Map.Entry<Job<?, ?>, CheckRun>> stageCheckRuns) {
+    List<CheckRun> stages =
+        AbstractCheckRunFactory.computeStageCheckRuns(jenkins, ps, run, parent, absoluteRunUrl(run));
+    for (CheckRun stage : stages) {
+      stageCheckRuns.add(Map.entry(job, stage));
+    }
+  }
+
+  private String absoluteRunUrl(Run<?, ?> run) {
+    return String.format("%s%s", jenkins.getRootUrl(), run.getUrl());
   }
 
   @SuppressWarnings("rawtypes")
@@ -199,7 +227,9 @@ public class DirectCheckRunCollector implements CheckRunCollector {
 
   @SuppressWarnings("rawtypes")
   private void collectDownstreamCheckRuns(
-      PatchSetId ps, Map<Job<?, ?>, List<CheckRun>> checkRuns) {
+      PatchSetId ps,
+      Map<Job<?, ?>, List<CheckRun>> checkRuns,
+      List<Map.Entry<Job<?, ?>, CheckRun>> stageCheckRuns) {
     Set<String> directRunIds = new HashSet<>();
     Map<String, CheckRun> directRunByExtId = new HashMap<>();
     for (List<CheckRun> runs : checkRuns.values()) {
@@ -221,16 +251,15 @@ public class DirectCheckRunCollector implements CheckRunCollector {
           String childKey = child.getExternalizableId();
           if (directRunByExtId.containsKey(childKey)) {
             CheckRun directRun = directRunByExtId.remove(childKey);
-            directRun.setExternalId(
-                buildDownstreamExternalId(rootKey, childKey));
+            directRun.setExternalId(AbstractCheckRunFactory.childId(rootKey, childKey));
           } else {
             Job<?, ?> childJob = child.getParent();
             checkRuns.computeIfAbsent(childJob, k -> new ArrayList<>()).add(
-                createDownstreamCheckRun(ps, rootKey, child, childJob));
+                createDownstreamCheckRun(ps, rootKey, child, childJob, stageCheckRuns));
           }
           if (traversed.add(childKey)) {
             traverseDownstream(ps, childKey, child, checkRuns,
-                downstreamMap, traversed, directRunIds, directRunByExtId, 1);
+                downstreamMap, traversed, directRunIds, directRunByExtId, stageCheckRuns, 1);
           }
         }
       }
@@ -276,6 +305,7 @@ public class DirectCheckRunCollector implements CheckRunCollector {
       Set<String> traversed,
       Set<String> directRunIds,
       Map<String, CheckRun> directRunByExtId,
+      List<Map.Entry<Job<?, ?>, CheckRun>> stageCheckRuns,
       int depth) {
 
     if (depth >= MAX_DOWNSTREAM_DEPTH) {
@@ -294,25 +324,18 @@ public class DirectCheckRunCollector implements CheckRunCollector {
       String childKey = child.getExternalizableId();
       if (directRunByExtId.containsKey(childKey)) {
         CheckRun directRun = directRunByExtId.remove(childKey);
-        directRun.setExternalId(
-            buildDownstreamExternalId(upstreamKey, childKey));
+        directRun.setExternalId(AbstractCheckRunFactory.childId(upstreamKey, childKey));
       } else {
         Job<?, ?> childJob = child.getParent();
         checkRuns.computeIfAbsent(childJob, k -> new ArrayList<>()).add(
-            createDownstreamCheckRun(ps, upstreamKey, child, childJob));
+            createDownstreamCheckRun(ps, upstreamKey, child, childJob, stageCheckRuns));
       }
       if (traversed.add(childKey)) {
         traverseDownstream(ps, childKey, child, checkRuns,
             downstreamMap, traversed, directRunIds,
-            directRunByExtId, depth + 1);
+            directRunByExtId, stageCheckRuns, depth + 1);
       }
     }
-  }
-
-  private static String buildDownstreamExternalId(
-      String parentKey, String runKey) {
-    return String.format(
-        "{\"parent\":\"%s\",\"run\":\"%s\"}", parentKey, runKey);
   }
 
   @SuppressWarnings("rawtypes")
@@ -320,12 +343,13 @@ public class DirectCheckRunCollector implements CheckRunCollector {
       PatchSetId ps,
       String upstreamKey,
       Run<?, ?> run,
-      Job<?, ?> job) {
+      Job<?, ?> job,
+      List<Map.Entry<Job<?, ?>, CheckRun>> stageCheckRuns) {
 
     String runId = run.getExternalizableId();
-    String externalId = buildDownstreamExternalId(upstreamKey, runId);
+    String externalId = AbstractCheckRunFactory.childId(upstreamKey, runId);
 
-    String runUrl = String.format("%s%s", jenkins.getRootUrl(), run.getUrl());
+    String runUrl = absoluteRunUrl(run);
 
     CheckRun checkRun = new CheckRun();
     checkRun.setChange(ps.changeId());
@@ -349,23 +373,9 @@ public class DirectCheckRunCollector implements CheckRunCollector {
     checkRun.setFinishedTimestamp(
         AbstractCheckRunFactory.computeFinishedTimeStamp(run));
 
-    List<CheckResult> results = new ArrayList<>();
-    if (!run.hasntStartedYet() && !run.isBuilding()) {
-      CheckResult result = new CheckResult();
-      result.setExternalId(externalId);
-      Result jenkinsResult = run.getResult();
-      if (jenkinsResult != null) {
-        result.setCategory(Category.fromResult(jenkinsResult));
-      }
-      Link consoleLink = new Link();
-      consoleLink.setUrl(String.format("%sconsole", runUrl));
-      consoleLink.setTooltip("Build log.");
-      consoleLink.setIcon(LinkIcon.CODE);
-      consoleLink.setPrimary(true);
-      result.setLinks(List.of(consoleLink));
-      results.add(result);
-    }
-    checkRun.setResults(results);
+    checkRun.setResults(
+        AbstractCheckRunFactory.computeCheckResults(run, externalId, runUrl));
+    addStageCheckRuns(ps, run, checkRun, job, stageCheckRuns);
 
     return checkRun;
   }

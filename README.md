@@ -131,6 +131,101 @@ Response:
 }
 ```
 
+## Pipeline Stages
+
+Every stage of a Pipeline build is reported as a `CheckRun` of its own, nested
+below the `CheckRun` of the build. Gerrit lists the stages below the build, so
+a stage that failed, was unstable or was skipped is visible without opening
+Jenkins. Runs that are not Pipeline builds are reported as a single `CheckRun`,
+as before.
+
+A stage encodes the nesting in its `externalId`, the same way a downstream
+build does. The `run` part is the externalizable ID of the Run followed by the
+ID of the stage's flow node:
+
+```js
+{
+    "change": 101,
+    "patchSet": 4,
+    "attempt": 1,
+    "externalId": "{\"parent\":\"my-pipeline#7\",\"run\":\"my-pipeline#7#12\"}",
+    // Name of the stage, numbered if stages share a name
+    "checkName": "Test",
+    "checkLink": "https://example.com/jenkins/job/my-pipeline/7/stages/?selected-node=12",
+    "status": "COMPLETED",
+    "statusDescription": "broken since this build",
+    "statusLink": "https://example.com/jenkins/job/my-pipeline/7/stages/?selected-node=12",
+    // Stages are not rerun on their own, the Run carries the actions
+    "actions": [],
+    "scheduledTimestamp": "2022-11-07T13:04:12.609Z",
+    "startedTimestamp": "2022-11-07T13:04:12.626Z",
+    "finishedTimestamp": "2022-11-07T13:04:13.051Z",
+    "results": [
+        {
+            // A completed run without results would count as passing
+            "externalId": "my-pipeline#7#12",
+            "category": "ERROR",
+            "message": "script returned exit code 1",
+            "links": [
+                {
+                    "icon": "CODE",
+                    "tooltip": "Stage log.",
+                    "url": "https://example.com/jenkins/job/my-pipeline/7/stages/?selected-node=12",
+                    "primary": true
+                },
+                {
+                    "icon": "CODE",
+                    "tooltip": "Build log.",
+                    "url": "https://example.com/jenkins/job/my-pipeline/7/console",
+                    "primary": false
+                }
+            ]
+        }
+    ]
+}
+```
+
+A stage is reported as `SUCCESS`, as `WARNING` if it was unstable, as `ERROR`
+if it failed and as `INFO` while it is still running. Stages that were skipped,
+because a `when` condition was not met or because an earlier stage failed, are
+not reported at all.
+
+Gerrit identifies a check run by its name, change, patchset and attempt, so
+stages that share a name have to be told apart. Stages of a parallel branch are
+named after their branch (`linux / Test`), and stages that share a name even
+then, e.g. because they run in a loop, are numbered (`Test`, `Test (2)`). Only
+the second and later occurrences are numbered, so the name of a stage does not
+change once it has been reported.
+
+All three links of a stage -- `checkLink`, `statusLink` and the first link of
+its result -- point at the stage itself, not at the Run it belongs to. They lead
+to the entry of the stage in the Pipeline stage view
+(`.../stages/?selected-node=<nodeId>`), which requires the
+[pipeline-graph-view](https://plugins.jenkins.io/pipeline-graph-view) plugin, and
+to the flow node of the stage (`.../execution/node/<nodeId>/`) without it. The
+build log is linked as well, as the second link of the result.
+
+## Configuration
+
+Which stages are reported can be configured globally, for a folder and for a
+single job. A folder is where a multibranch Pipeline is configured, since its
+branch jobs cannot be configured individually. Every setting can be left to be
+inherited, in which case the enclosing folder decides and finally the global
+configuration.
+
+The global defaults are found under *Manage Jenkins » System*, the settings of a
+job under *Properties* on its configuration page and the settings of a folder or
+multibranch project on its own configuration page.
+
+| Setting | Meaning |
+| --- | --- |
+| Report stages | Whether the stages are reported as check runs at all. Turning this off reports the build as a single check run, as it was before. |
+| Stage depth | `All stages` reports every stage. `Top level stages only` leaves out the stages nested inside another stage, and `Up to a maximum depth` reports the stages up to the given depth. A build with tens of nested stages is difficult to read in Gerrit. |
+| Skip the stages Jenkins adds to a declarative pipeline | Leaves out the stages that Jenkins itself adds, e.g. `Declarative: Checkout SCM` and `Declarative: Post Actions`. |
+
+An error of a stage that is left out is reported on the stage enclosing it, so a
+nested stage that fails still turns its parent stage red.
+
 ## Downstream Build Discovery
 
 When a build directly triggered by Gerrit causes downstream builds (via

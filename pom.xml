@@ -82,6 +82,26 @@
       <artifactId>lucene-search</artifactId>
       <version>425.v2ccf4cc3a_d55</version>
     </dependency>
+    <!-- Optional: only needed to report one CheckResult per pipeline stage. The
+         code is guarded by a plugin check, so the plugin also works without
+         Pipeline installed. -->
+    <dependency>
+      <groupId>org.jenkins-ci.plugins.workflow</groupId>
+      <artifactId>workflow-api</artifactId>
+      <optional>true</optional>
+    </dependency>
+    <dependency>
+      <groupId>org.jenkins-ci.plugins.workflow</groupId>
+      <artifactId>workflow-job</artifactId>
+      <optional>true</optional>
+    </dependency>
+    <!-- Optional: the stage reporting settings of a folder, which is where a
+         multibranch pipeline is configured. -->
+    <dependency>
+      <groupId>org.jenkins-ci.plugins</groupId>
+      <artifactId>cloudbees-folder</artifactId>
+      <optional>true</optional>
+    </dependency>
     <dependency>
       <groupId>org.mockito</groupId>
       <artifactId>mockito-core</artifactId>
