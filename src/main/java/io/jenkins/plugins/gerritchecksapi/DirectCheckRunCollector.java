@@ -168,8 +168,9 @@ public class DirectCheckRunCollector implements CheckRunCollector {
   }
 
   /**
-   * Collects the check runs of the stages of a Pipeline build. They are kept aside until the whole
-   * run has been collected, see {@link #collectFor}.
+   * Collects the check runs of the stages of a Pipeline build, for the builds whose stages are
+   * reported as check runs of their own. They are kept aside until the whole run has been
+   * collected, see {@link #collectFor}.
    */
   private void addStageCheckRuns(
       PatchSetId ps,
@@ -374,7 +375,7 @@ public class DirectCheckRunCollector implements CheckRunCollector {
         AbstractCheckRunFactory.computeFinishedTimeStamp(run));
 
     checkRun.setResults(
-        AbstractCheckRunFactory.computeCheckResults(run, externalId, runUrl));
+        AbstractCheckRunFactory.computeCheckResults(jenkins, run, externalId, runUrl));
     addStageCheckRuns(ps, run, checkRun, job, stageCheckRuns);
 
     return checkRun;

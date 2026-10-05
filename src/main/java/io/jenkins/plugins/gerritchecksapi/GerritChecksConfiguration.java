@@ -34,6 +34,8 @@ public class GerritChecksConfiguration extends GlobalConfiguration {
   private static final String FOLDER_PLUGIN = "cloudbees-folder";
 
   private Inheritable reportStages = Inheritable.ENABLED;
+  private Inheritable reportStagesWhileBuilding = Inheritable.ENABLED;
+  private StageForm stageForm = StageForm.RESULTS;
   private StageDepth stageDepth = StageDepth.ALL;
   private int maxDepth;
   private Inheritable skipDeclarativeStages = Inheritable.DISABLED;
@@ -100,7 +102,13 @@ public class GerritChecksConfiguration extends GlobalConfiguration {
   }
 
   public StageReporting getStageReporting() {
-    return new StageReporting(reportStages, stageDepth, maxDepth, skipDeclarativeStages);
+    return new StageReporting(
+        reportStages,
+        reportStagesWhileBuilding,
+        stageForm,
+        stageDepth,
+        maxDepth,
+        skipDeclarativeStages);
   }
 
   public Inheritable getReportStages() {
@@ -109,6 +117,22 @@ public class GerritChecksConfiguration extends GlobalConfiguration {
 
   public void setReportStages(Inheritable reportStages) {
     this.reportStages = reportStages;
+  }
+
+  public Inheritable getReportStagesWhileBuilding() {
+    return reportStagesWhileBuilding;
+  }
+
+  public void setReportStagesWhileBuilding(Inheritable reportStagesWhileBuilding) {
+    this.reportStagesWhileBuilding = reportStagesWhileBuilding;
+  }
+
+  public StageForm getStageForm() {
+    return stageForm;
+  }
+
+  public void setStageForm(StageForm stageForm) {
+    this.stageForm = stageForm;
   }
 
   public StageDepth getStageDepth() {

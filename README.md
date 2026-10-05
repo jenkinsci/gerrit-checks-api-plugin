@@ -133,53 +133,40 @@ Response:
 
 ## Pipeline Stages
 
-Every stage of a Pipeline build is reported as a `CheckRun` of its own, nested
-below the `CheckRun` of the build. Gerrit lists the stages below the build, so
-a stage that failed, was unstable or was skipped is visible without opening
-Jenkins. Runs that are not Pipeline builds are reported as a single `CheckRun`,
-as before.
+Every stage of a Pipeline build is reported as a `CheckResult` of the
+`CheckRun` of the build, so that Gerrit lists one row per build and the stages
+inside it. Gerrit derives the badge of a run from the most severe of its
+results, so a stage that failed, was unstable or is still running is visible
+without opening Jenkins. Runs that are not Pipeline builds are reported as a
+single result, as before.
 
-A stage encodes the nesting in its `externalId`, the same way a downstream
-build does. The `run` part is the externalizable ID of the Run followed by the
-ID of the stage's flow node:
+A stage can also be reported as a `CheckRun` of its own, nested below the run of
+the build, which gives it a row and a status of its own. Which of the two is
+used is configurable, see [Configuration](#configuration); the results are the
+default.
+
+The `externalId` of a stage result is the externalizable ID of the Run followed
+by the ID of the stage's flow node, and its `summary` is the name of the stage:
 
 ```js
 {
-    "change": 101,
-    "patchSet": 4,
-    "attempt": 1,
-    "externalId": "{\"parent\":\"my-pipeline#7\",\"run\":\"my-pipeline#7#12\"}",
+    "externalId": "my-pipeline#7#12",
     // Name of the stage, numbered if stages share a name
-    "checkName": "Test",
-    "checkLink": "https://example.com/jenkins/job/my-pipeline/7/stages/?selected-node=12",
-    "status": "COMPLETED",
-    "statusDescription": "broken since this build",
-    "statusLink": "https://example.com/jenkins/job/my-pipeline/7/stages/?selected-node=12",
-    // Stages are not rerun on their own, the Run carries the actions
-    "actions": [],
-    "scheduledTimestamp": "2022-11-07T13:04:12.609Z",
-    "startedTimestamp": "2022-11-07T13:04:12.626Z",
-    "finishedTimestamp": "2022-11-07T13:04:13.051Z",
-    "results": [
+    "summary": "Test",
+    "category": "ERROR",
+    "message": "script returned exit code 1",
+    "links": [
         {
-            // A completed run without results would count as passing
-            "externalId": "my-pipeline#7#12",
-            "category": "ERROR",
-            "message": "script returned exit code 1",
-            "links": [
-                {
-                    "icon": "CODE",
-                    "tooltip": "Stage log.",
-                    "url": "https://example.com/jenkins/job/my-pipeline/7/stages/?selected-node=12",
-                    "primary": true
-                },
-                {
-                    "icon": "CODE",
-                    "tooltip": "Build log.",
-                    "url": "https://example.com/jenkins/job/my-pipeline/7/console",
-                    "primary": false
-                }
-            ]
+            "icon": "CODE",
+            "tooltip": "Stage log.",
+            "url": "https://example.com/jenkins/job/my-pipeline/7/stages/?selected-node=12",
+            "primary": true
+        },
+        {
+            "icon": "CODE",
+            "tooltip": "Build log.",
+            "url": "https://example.com/jenkins/job/my-pipeline/7/console",
+            "primary": false
         }
     ]
 }
@@ -190,16 +177,18 @@ if it failed and as `INFO` while it is still running. Stages that were skipped,
 because a `when` condition was not met or because an earlier stage failed, are
 not reported at all.
 
-Gerrit identifies a check run by its name, change, patchset and attempt, so
-stages that share a name have to be told apart. Stages of a parallel branch are
-named after their branch (`linux / Test`), and stages that share a name even
-then, e.g. because they run in a loop, are numbered (`Test`, `Test (2)`). Only
-the second and later occurrences are numbered, so the name of a stage does not
-change once it has been reported.
+A stage that is reported as a check run of its own carries the same result of
+its own, and is `RUNNING` until the stage has finished.
 
-All three links of a stage -- `checkLink`, `statusLink` and the first link of
-its result -- point at the stage itself, not at the Run it belongs to. They lead
-to the entry of the stage in the Pipeline stage view
+Stages that share a name have to be told apart, since the name is what the
+result shows. Stages of a parallel branch are named after their branch
+(`linux / Test`), and stages that share a name even then, e.g. because they run
+in a loop, are numbered (`Test`, `Test (2)`). Only the second and later
+occurrences are numbered, so the name of a stage does not change once it has
+been reported.
+
+The first link of a stage points at the stage itself, not at the Run it belongs
+to. It leads to the entry of the stage in the Pipeline stage view
 (`.../stages/?selected-node=<nodeId>`), which requires the
 [pipeline-graph-view](https://plugins.jenkins.io/pipeline-graph-view) plugin, and
 to the flow node of the stage (`.../execution/node/<nodeId>/`) without it. The
@@ -219,12 +208,14 @@ multibranch project on its own configuration page.
 
 | Setting | Meaning |
 | --- | --- |
-| Report stages | Whether the stages are reported as check runs at all. Turning this off reports the build as a single check run, as it was before. |
+| Report stages | Whether the stages are reported as results at all. Turning this off reports the build as a single check run, as it was before. |
+| Report stages while the build is running | Whether the stages of a build that is still building are reported. Turned off, the stages of a build appear once it has finished, so that what a run reports does not change while it runs. |
+| Report stages as | `As results of the build` reports a stage as a result of the run of its build, so that Gerrit lists one row per build and the stages inside it. `As check runs of their own` reports every stage as a check run of its own, nested below the run of the build, which gives each stage a row and a status of its own. |
 | Stage depth | `All stages` reports every stage. `Top level stages only` leaves out the stages nested inside another stage, and `Up to a maximum depth` reports the stages up to the given depth. A build with tens of nested stages is difficult to read in Gerrit. |
 | Skip the stages Jenkins adds to a declarative pipeline | Leaves out the stages that Jenkins itself adds, e.g. `Declarative: Checkout SCM` and `Declarative: Post Actions`. |
 
 An error of a stage that is left out is reported on the stage enclosing it, so a
-nested stage that fails still turns its parent stage red.
+nested stage that fails still fails the build.
 
 ## Downstream Build Discovery
 
