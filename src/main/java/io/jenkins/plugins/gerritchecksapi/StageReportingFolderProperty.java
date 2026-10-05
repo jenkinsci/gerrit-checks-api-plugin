@@ -32,8 +32,20 @@ public class StageReportingFolderProperty extends AbstractFolderProperty<Abstrac
 
   @DataBoundConstructor
   public StageReportingFolderProperty(
-      Inheritable reportStages, StageDepth stageDepth, int maxDepth, Inheritable skipDeclarativeStages) {
-    this.stageReporting = new StageReporting(reportStages, stageDepth, maxDepth, skipDeclarativeStages);
+      Inheritable reportStages,
+      Inheritable reportStagesWhileBuilding,
+      StageForm stageForm,
+      StageDepth stageDepth,
+      int maxDepth,
+      Inheritable skipDeclarativeStages) {
+    this.stageReporting =
+        new StageReporting(
+            reportStages,
+            reportStagesWhileBuilding,
+            stageForm,
+            stageDepth,
+            maxDepth,
+            skipDeclarativeStages);
   }
 
   public StageReporting getStageReporting() {
@@ -43,6 +55,14 @@ public class StageReportingFolderProperty extends AbstractFolderProperty<Abstrac
   // For the configuration form, which binds to the fields of the property.
   public Inheritable getReportStages() {
     return stageReporting.getReportStages();
+  }
+
+  public Inheritable getReportStagesWhileBuilding() {
+    return stageReporting.getReportStagesWhileBuilding();
+  }
+
+  public StageForm getStageForm() {
+    return stageReporting.getStageForm();
   }
 
   public StageDepth getStageDepth() {

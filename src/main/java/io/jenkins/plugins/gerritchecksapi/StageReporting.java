@@ -17,7 +17,7 @@ package io.jenkins.plugins.gerritchecksapi;
 import java.io.Serializable;
 
 /**
- * The settings controlling which stages of a Pipeline build are reported to Gerrit as check runs.
+ * The settings controlling which stages of a Pipeline build are reported to Gerrit.
  *
  * <p>A value that is left as {@code INHERIT} is taken from the enclosing folder, then from the
  * global configuration and finally from {@link #defaults()}, which reports every stage.
@@ -26,6 +26,10 @@ public class StageReporting implements Serializable {
   private static final long serialVersionUID = 1L;
 
   private Inheritable reportStages = Inheritable.INHERIT;
+  // A job or a folder configured before these settings existed has the fields
+  // empty: the XML it was persisted as has no value for them.
+  private Inheritable reportStagesWhileBuilding = Inheritable.INHERIT;
+  private StageForm stageForm = StageForm.INHERIT;
   private StageDepth stageDepth = StageDepth.INHERIT;
   private int maxDepth;
   private Inheritable skipDeclarativeStages = Inheritable.INHERIT;
@@ -33,8 +37,15 @@ public class StageReporting implements Serializable {
   public StageReporting() {}
 
   public StageReporting(
-      Inheritable reportStages, StageDepth stageDepth, int maxDepth, Inheritable skipDeclarativeStages) {
+      Inheritable reportStages,
+      Inheritable reportStagesWhileBuilding,
+      StageForm stageForm,
+      StageDepth stageDepth,
+      int maxDepth,
+      Inheritable skipDeclarativeStages) {
     setReportStages(reportStages);
+    setReportStagesWhileBuilding(reportStagesWhileBuilding);
+    setStageForm(stageForm);
     setStageDepth(stageDepth);
     setMaxDepth(maxDepth);
     setSkipDeclarativeStages(skipDeclarativeStages);
@@ -44,6 +55,8 @@ public class StageReporting implements Serializable {
   public static StageReporting defaults() {
     StageReporting defaults = new StageReporting();
     defaults.reportStages = Inheritable.ENABLED;
+    defaults.reportStagesWhileBuilding = Inheritable.ENABLED;
+    defaults.stageForm = StageForm.RESULTS;
     defaults.stageDepth = StageDepth.ALL;
     defaults.skipDeclarativeStages = Inheritable.DISABLED;
     return defaults;
@@ -60,6 +73,12 @@ public class StageReporting implements Serializable {
     if (other.reportStages.isSet()) {
       reportStages = other.reportStages;
     }
+    if (other.getReportStagesWhileBuilding().isSet()) {
+      reportStagesWhileBuilding = other.reportStagesWhileBuilding;
+    }
+    if (other.getStageForm().isSet()) {
+      stageForm = other.stageForm;
+    }
     if (other.stageDepth.isSet()) {
       stageDepth = other.stageDepth;
     }
@@ -74,6 +93,23 @@ public class StageReporting implements Serializable {
   /** Whether the stages of a build are reported at all. */
   public boolean isReportStagesEnabled() {
     return reportStages.isEnabled();
+  }
+
+  /**
+   * Whether the stages of a build that is still building are reported. Left out, the stages of a
+   * build are reported once it has finished, so that the results of a run do not change while it
+   * runs.
+   */
+  public boolean isReportStagesWhileBuildingEnabled() {
+    return getReportStagesWhileBuilding().isEnabled();
+  }
+
+  /**
+   * Whether the stages are reported as check runs of their own rather than as results of the run of
+   * their build.
+   */
+  public boolean reportsStagesAsCheckRuns() {
+    return getStageForm() == StageForm.CHECK_RUNS;
   }
 
   /**
@@ -103,6 +139,23 @@ public class StageReporting implements Serializable {
 
   public void setReportStages(Inheritable reportStages) {
     this.reportStages = reportStages == null ? Inheritable.INHERIT : reportStages;
+  }
+
+  public Inheritable getReportStagesWhileBuilding() {
+    return reportStagesWhileBuilding == null ? Inheritable.INHERIT : reportStagesWhileBuilding;
+  }
+
+  public void setReportStagesWhileBuilding(Inheritable reportStagesWhileBuilding) {
+    this.reportStagesWhileBuilding =
+        reportStagesWhileBuilding == null ? Inheritable.INHERIT : reportStagesWhileBuilding;
+  }
+
+  public StageForm getStageForm() {
+    return stageForm == null ? StageForm.INHERIT : stageForm;
+  }
+
+  public void setStageForm(StageForm stageForm) {
+    this.stageForm = stageForm == null ? StageForm.INHERIT : stageForm;
   }
 
   public StageDepth getStageDepth() {

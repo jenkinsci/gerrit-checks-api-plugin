@@ -3,6 +3,12 @@
   <f:entry title="Report stages">
     <f:enum field="reportStages" default="ENABLED">${it.displayName}</f:enum>
   </f:entry>
+  <f:entry title="Report stages while the build is running">
+    <f:enum field="reportStagesWhileBuilding" default="ENABLED">${it.displayName}</f:enum>
+  </f:entry>
+  <f:entry title="Report stages as">
+    <f:enum field="stageForm" default="RESULTS">${it.displayName}</f:enum>
+  </f:entry>
   <f:entry title="Stage depth">
     <f:enum field="stageDepth" default="ALL">${it.displayName}</f:enum>
   </f:entry>

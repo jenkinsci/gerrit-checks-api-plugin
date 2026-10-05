@@ -16,6 +16,7 @@ package io.jenkins.plugins.gerritchecksapi.rest;
 
 import hudson.model.Run;
 import io.jenkins.plugins.gerritchecksapi.PatchSetId;
+import io.jenkins.plugins.gerritchecksapi.StageForm;
 import io.jenkins.plugins.gerritchecksapi.StageReporting;
 import io.jenkins.plugins.gerritchecksapi.rest.CheckResult.Category;
 import io.jenkins.plugins.gerritchecksapi.rest.CheckRun.RunStatus;
@@ -41,19 +42,25 @@ import org.jenkinsci.plugins.workflow.graph.FlowNode;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 
 /**
- * Computes one {@link CheckRun} per stage of a Pipeline build.
+ * Computes what to report for each stage of a Pipeline build, either as a {@link CheckResult} of
+ * the run of the build or as a {@link CheckRun} of its own.
  *
- * <p>The stages of a build are reported as check runs of their own, nested below the check run of
- * the build through the parent/run external ID that downstream builds already use. That way Gerrit
- * shows them as leaves of the build in its list of check runs, and a single stage failing is
- * visible without opening Jenkins. Without this, a Pipeline build is reported as a single run,
- * which gives no indication of which stage failed, was unstable or was skipped.
+ * <p>A stage is reported as a result of the check run of the build it belongs to. Gerrit lists
+ * check runs as a flat list, so one run per stage would push a row per stage next to the build;
+ * as a result the stage stays inside the run it belongs to. Gerrit derives the badge of a run from
+ * the most severe of its results, so a single stage failing still turns the build red without
+ * opening Jenkins. Where a stage deserves a row and a status of its own, the check run form is
+ * used instead, see {@link StageForm}.
+ *
+ * <p>The key of a stage is the ID of the run followed by '#' and the ID of the stage's flow node,
+ * e.g. 'my-pipeline#7#12'. It identifies the stage in the results of its run, and nests the check
+ * run of a stage below the check run of the run.
  *
  * <p>Every class referencing the Pipeline API is confined to this class. Callers have to check that
- * the {@code workflow-job} plugin is installed before calling {@link #compute}, so that the plugin
- * keeps working on instances without Pipeline.
+ * the {@code workflow-job} plugin is installed before calling {@link #results} or {@link
+ * #checkRuns}, so that the plugin keeps working on instances without Pipeline.
  */
-public final class PipelineStageCheckRuns {
+public final class PipelineStages {
   /** Plugin providing the stage view that the stage links point at. */
   static final String STAGE_VIEW_PLUGIN = "pipeline-graph-view";
 
@@ -69,22 +76,55 @@ public final class PipelineStageCheckRuns {
   /** Prefix of the names of the stages Jenkins itself adds to a declarative pipeline. */
   private static final String DECLARATIVE_PREFIX = "Declarative: ";
 
-  private PipelineStageCheckRuns() {}
+  private PipelineStages() {}
 
   /**
-   * Returns one check run per stage of the given run.
+   * Returns one result per stage of the given run, which are to be added to the results of the run
+   * itself.
+   *
+   * @return the results of the stages, or an empty list if the run is not a Pipeline build, does
+   *     not expose any stage, or is still building and not allowed to report its stages yet
+   */
+  public static List<CheckResult> results(Run<?, ?> run, String runUrl, StageReporting reporting) {
+    if (!(run instanceof WorkflowRun)) {
+      return List.of();
+    }
+    return results(
+        ((WorkflowRun) run).getExecution(),
+        run.getExternalizableId(),
+        run.isBuilding(),
+        runUrl,
+        reporting);
+  }
+
+  static List<CheckResult> results(
+      FlowExecution execution,
+      String runKey,
+      boolean building,
+      String runUrl,
+      StageReporting reporting) {
+    List<CheckResult> results = new ArrayList<>();
+    for (Stage stage : reportedStages(execution, building, reporting)) {
+      results.add(stage.toResult(runKey, runUrl));
+    }
+    return results;
+  }
+
+  /**
+   * Returns one check run per stage of the given run, which are to be added next to the check run
+   * of the run itself.
    *
    * @param parent the check run of the run itself, which the stages are nested below and whose
    *     attempt, description and timestamps they share
-   * @return the check runs of the stages, or an empty list if the run is not a Pipeline build or
-   *     does not expose any stage
+   * @return the check runs of the stages, or an empty list if the run is not a Pipeline build, does
+   *     not expose any stage, or is still building and not allowed to report its stages yet
    */
-  public static List<CheckRun> compute(
+  public static List<CheckRun> checkRuns(
       PatchSetId ps, Run<?, ?> run, CheckRun parent, String runUrl, StageReporting reporting) {
     if (!(run instanceof WorkflowRun)) {
       return List.of();
     }
-    return compute(
+    return checkRuns(
         ps,
         ((WorkflowRun) run).getExecution(),
         run.getExternalizableId(),
@@ -94,7 +134,7 @@ public final class PipelineStageCheckRuns {
         reporting);
   }
 
-  static List<CheckRun> compute(
+  static List<CheckRun> checkRuns(
       PatchSetId ps,
       FlowExecution execution,
       String runKey,
@@ -102,7 +142,29 @@ public final class PipelineStageCheckRuns {
       CheckRun parent,
       String runUrl,
       StageReporting reporting) {
+    List<CheckRun> checkRuns = new ArrayList<>();
+    for (Stage stage : reportedStages(execution, building, reporting)) {
+      checkRuns.add(stage.toCheckRun(ps, parent, runKey, runUrl, building));
+    }
+    return checkRuns;
+  }
+
+  /**
+   * The stages of a run that are reported, in the order in which they were created, each carrying
+   * whether it has finished.
+   *
+   * @return the stages, or an empty list if the run has no execution, exposes no stage that the
+   *     settings report, or is still building and not allowed to report its stages while it runs
+   */
+  private static List<Stage> reportedStages(
+      FlowExecution execution, boolean building, StageReporting reporting) {
     if (execution == null) {
+      return List.of();
+    }
+    if (building && !reporting.isReportStagesWhileBuildingEnabled()) {
+      // A build that is still building reports its stages only when they are wanted while
+      // it runs: they change on every poll, so leaving them out until the build has
+      // finished keeps what the run reports quiet in the meantime.
       return List.of();
     }
     List<FlowNode> nodes = walk(execution);
@@ -118,15 +180,11 @@ public final class PipelineStageCheckRuns {
     // them, if there is one.
     collectFailures(nodes, stages);
     Set<String> finishedStages = findFinishedStages(nodes);
-    nameStages(stages);
-
-    List<CheckRun> checkRuns = new ArrayList<>();
     for (Stage stage : stages) {
-      checkRuns.add(
-          stage.toCheckRun(
-              ps, parent, runKey, runUrl, finishedStages.contains(stage.id()), building));
+      stage.finished = finishedStages.contains(stage.id());
     }
-    return checkRuns;
+    nameStages(stages);
+    return stages;
   }
 
   private static List<Stage> applyReportingSettings(List<Stage> stages, StageReporting reporting) {
@@ -258,9 +316,8 @@ public final class PipelineStageCheckRuns {
 
   /**
    * Gives the stages their names. Stages can have the same name, e.g. when a stage runs in a loop
-   * or once per branch of a parallel step, but Gerrit identifies a check run by its name: two runs
-   * with the same name, change, patchset and attempt are the same run to Gerrit. Stages sharing a
-   * name are therefore numbered.
+   * or once per branch of a parallel step. Gerrit shows the name as the summary of the result, so
+   * stages sharing a name would be indistinguishable, and they are numbered.
    *
    * <p>Only the second and later occurrences are numbered, in creation order. The name of a stage
    * therefore never changes once it has been reported, not even when further stages are added
@@ -285,6 +342,7 @@ public final class PipelineStageCheckRuns {
     private final BlockStartNode node;
     private final String baseName;
     private String checkName;
+    private boolean finished;
     private ErrorAction error;
     private WarningAction warning;
 
@@ -352,7 +410,7 @@ public final class PipelineStageCheckRuns {
       }
     }
 
-    private Category category(boolean finished) {
+    private Category category() {
       if (error != null) {
         return Category.ERROR;
       }
@@ -370,20 +428,17 @@ public final class PipelineStageCheckRuns {
       return warning == null ? null : warning.getMessage();
     }
 
-    private CheckRun toCheckRun(
-        PatchSetId ps,
-        CheckRun parent,
-        String runKey,
-        String runUrl,
-        boolean finished,
-        boolean building) {
-      String stageKey = String.format("%s#%s", runKey, id());
+    private CheckResult toResult(String runKey, String runUrl) {
+      return computeResult(stageKey(runKey), checkName, runUrl, id(), category(), message());
+    }
 
+    private CheckRun toCheckRun(
+        PatchSetId ps, CheckRun parent, String runKey, String runUrl, boolean building) {
       CheckRun checkRun = new CheckRun();
       checkRun.setChange(ps.changeId());
       checkRun.setPatchSet(ps.patchSetNumber());
       checkRun.setAttempt(parent.getAttempt());
-      checkRun.setExternalId(AbstractCheckRunFactory.childId(runKey, stageKey));
+      checkRun.setExternalId(AbstractCheckRunFactory.childId(runKey, stageKey(runKey)));
       checkRun.setCheckName(checkName);
       checkRun.setCheckDescription(parent.getCheckDescription());
       checkRun.setCheckLink(stageUrl(runUrl, id()));
@@ -398,19 +453,39 @@ public final class PipelineStageCheckRuns {
       checkRun.setStartedTimestamp(parent.getStartedTimestamp());
       checkRun.setFinishedTimestamp(parent.getFinishedTimestamp());
       checkRun.setResults(
-          List.of(computeResult(stageKey, runUrl, id(), category(finished), message())));
+          List.of(computeResult(stageKey(runKey), checkName, runUrl, id(), category(), message())));
       return checkRun;
+    }
+
+    /**
+     * The key of the stage, which is the key of its run followed by '#' and the ID of the stage's
+     * flow node. It identifies the stage in the results of the run, and nests its check run below
+     * the check run of the run.
+     */
+    private String stageKey(String runKey) {
+      return String.format("%s#%s", runKey, id());
     }
   }
 
   /**
-   * A check run needs a result: Gerrit treats a completed run without results as passing, so a
-   * failed stage would be shown as successful without one.
+   * The result of one stage. Gerrit shows the summary on the row of the result and the message in
+   * its details, so the summary carries the name of the stage and the message the error or warning
+   * it produced, if any. A check run of a stage carries the same result: a completed run without
+   * results would count as passing.
+   *
+   * @param resultId the {@link Stage#stageKey(String) key of the stage}, which has to be unique
+   *     within the results of the run so that the stage can be told apart from the others
    */
   private static CheckResult computeResult(
-      String resultId, String runUrl, String nodeId, Category category, String message) {
+      String resultId,
+      String summary,
+      String runUrl,
+      String nodeId,
+      Category category,
+      String message) {
     CheckResult result = new CheckResult();
     result.setExternalId(resultId);
+    result.setSummary(summary);
     result.setCategory(category);
     result.setMessage(message);
     result.setLinks(computeResultLinks(runUrl, nodeId));
