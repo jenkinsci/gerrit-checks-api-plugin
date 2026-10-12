@@ -423,10 +423,6 @@ class PipelineStagesTest {
     assertNotNull(stageLink, "The stage is linked first");
     assertEquals(LinkIcon.CODE, stageLink.getIcon());
     assertTrue(stageLink.isPrimary());
-
-    Link console = linkWithUrl(links, RUN_URL + "console");
-    assertNotNull(console, "The build log is still reachable");
-    assertFalse(console.isPrimary());
   }
 
   // --- the check runs of the stages ---

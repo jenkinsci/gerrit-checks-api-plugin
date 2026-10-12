@@ -161,12 +161,6 @@ by the ID of the stage's flow node, and its `summary` is the name of the stage:
             "tooltip": "Stage log.",
             "url": "https://example.com/jenkins/job/my-pipeline/7/stages/?selected-node=12",
             "primary": true
-        },
-        {
-            "icon": "CODE",
-            "tooltip": "Build log.",
-            "url": "https://example.com/jenkins/job/my-pipeline/7/console",
-            "primary": false
         }
     ]
 }

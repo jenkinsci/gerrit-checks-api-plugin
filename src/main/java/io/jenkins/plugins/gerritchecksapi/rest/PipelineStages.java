@@ -501,12 +501,6 @@ public final class PipelineStages {
     stageLink.setPrimary(true);
     links.add(stageLink);
 
-    Link consoleLogLink = new Link();
-    consoleLogLink.setUrl(String.format("%sconsole", runUrl));
-    consoleLogLink.setTooltip("Build log.");
-    consoleLogLink.setIcon(LinkIcon.CODE);
-    consoleLogLink.setPrimary(false);
-    links.add(consoleLogLink);
     return links;
   }
 
