@@ -46,7 +46,21 @@ public class CachingCheckRunCollector implements CheckRunCollector {
 
   @Override
   public Map<Job<?, ?>, List<CheckRun>> collectFor(PatchSetId ps) {
-    return cache.get(ps, p -> directCollector.collectFor(p));
+    Map<Job<?, ?>, List<CheckRun>> collected = cache.get(ps, p -> directCollector.collectFor(p));
+    if (isBuilding(collected)) {
+      // What a running build reports changes with every stage it goes through, so
+      // what was collected of it is kept only for this poll: the next one is
+      // served the stages the build had reached by then otherwise.
+      cache.invalidate(ps);
+    }
+    return collected;
+  }
+
+  /** Whether any of the collected runs is still building. */
+  private static boolean isBuilding(Map<Job<?, ?>, List<CheckRun>> collected) {
+    return collected.values().stream()
+        .flatMap(List::stream)
+        .anyMatch(CheckRun::isBuilding);
   }
 
   /**

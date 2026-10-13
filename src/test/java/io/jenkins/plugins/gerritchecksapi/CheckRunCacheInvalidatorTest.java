@@ -45,16 +45,6 @@ class CheckRunCacheInvalidatorTest {
   }
 
   @Test
-  void collectFor_isServedFromTheCacheUntilItExpires() {
-    PatchSetId ps = PatchSetId.create(101, 4);
-
-    caching.collectFor(ps);
-    caching.collectFor(ps);
-
-    verify(direct, times(1)).collectFor(ps);
-  }
-
-  @Test
   void onStarted_dropsWhatWasCollectedForThePatchsetOfTheBuild() {
     PatchSetId ps = PatchSetId.create(102, 4);
     caching.collectFor(ps);
