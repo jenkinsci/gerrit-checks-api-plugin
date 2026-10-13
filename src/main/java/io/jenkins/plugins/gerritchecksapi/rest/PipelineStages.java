@@ -168,17 +168,17 @@ public final class PipelineStages {
       return List.of();
     }
     List<FlowNode> nodes = walk(execution);
-    List<Stage> stages = findStages(nodes);
-    if (stages.isEmpty()) {
+    List<Stage> allStages = findStages(nodes);
+    if (allStages.isEmpty()) {
       return List.of();
     }
-    stages = applyReportingSettings(stages, reporting);
+    List<Stage> stages = applyReportingSettings(allStages, reporting);
     if (stages.isEmpty()) {
       return List.of();
     }
     // Errors of stages that are not reported are attributed to the stage enclosing
     // them, if there is one.
-    collectFailures(nodes, stages);
+    collectFailures(nodes, allStages, stages);
     Set<String> finishedStages = findFinishedStages(nodes);
     for (Stage stage : stages) {
       stage.finished = finishedStages.contains(stage.id());
@@ -215,10 +215,16 @@ public final class PipelineStages {
     return stagesById;
   }
 
-  private static List<FlowNode> walk(FlowExecution execution) {
+  static List<FlowNode> walk(FlowExecution execution) {
     List<FlowNode> nodes = new ArrayList<>();
-    for (FlowNode node : new FlowGraphWalker(execution)) {
-      nodes.add(node);
+    try {
+      for (FlowNode node : new FlowGraphWalker(execution)) {
+        nodes.add(node);
+      }
+    } catch (NullPointerException e) {
+      // The graph of a build that is still running is written as it is walked: a node the walk
+      // has reached can be one that is not stored yet, which the walker reads as a null parent.
+      // The stages seen so far are reported, and the next poll reports the rest.
     }
     return nodes;
   }
@@ -275,15 +281,48 @@ public final class PipelineStages {
     return finished;
   }
 
-  private static void collectFailures(List<FlowNode> nodes, List<Stage> stages) {
-    Map<String, Stage> stagesById = indexById(stages);
+  /**
+   * Collects the failures the stages report.
+   *
+   * <p>An error only fails the stage it ended. A step whose failure the pipeline caught and
+   * carried on from — a probe wrapped in a try/catch, say — and one that a {@code catchError}
+   * turned into a warning leave the error on the node the failure was caught in, while a stage
+   * that failed records it on its own end node. A stage that has an error of that kind is
+   * therefore also a stage that has finished, and a stage that is still running never reports a
+   * failure. Warnings are taken wherever they are: a warning is the result the pipeline left the
+   * build with, and it cannot carry on from it.
+   *
+   * <p>A stage that is not reported, e.g. because of the stage depth setting, hands its failure to
+   * the enclosing stage, so that a nested stage that failed still fails the one the reviewer sees.
+   *
+   * @param allStages the stages of the run, reported or not
+   * @param stages the stages that are reported, which the failures are attributed to
+   */
+  private static void collectFailures(
+      List<FlowNode> nodes, List<Stage> allStages, List<Stage> stages) {
+    Map<String, Stage> allById = indexById(allStages);
+    Map<String, Stage> reportedById = indexById(stages);
     for (FlowNode node : nodes) {
       ErrorAction error = node.getPersistentAction(ErrorAction.class);
       WarningAction warning = node.getPersistentAction(WarningAction.class);
       if (error == null && warning == null) {
         continue;
       }
-      Stage stage = enclosingStage(node, stagesById);
+      // The stage the error ended, if there is one: it is not among the blocks enclosing its
+      // own end node, which is where the walk below starts.
+      Stage ended = error == null ? null : endedStage(node, allById);
+      if (error != null && ended == null) {
+        error = null;
+      }
+      if (error == null && warning == null) {
+        continue;
+      }
+      // The stage the failure is reported on: the one it ended, and the stage enclosing it
+      // when that one is not reported, e.g. because of the stage depth setting.
+      Stage stage =
+          ended != null && reportedById.containsKey(ended.id())
+              ? ended
+              : enclosingStage(node, reportedById);
       if (stage == null) {
         continue;
       }
@@ -295,9 +334,18 @@ public final class PipelineStages {
     }
   }
 
+  /** The stage the node ends, or null when it does not end one. */
+  private static Stage endedStage(FlowNode node, Map<String, Stage> stagesById) {
+    if (!(node instanceof BlockEndNode)) {
+      return null;
+    }
+    BlockStartNode start = ((BlockEndNode<?>) node).getStartNode();
+    return start == null ? null : stagesById.get(start.getId());
+  }
+
   /**
-   * Finds the innermost stage containing the node. Errors and warnings are attached to the node
-   * where they occurred, which can be anywhere inside the stage, and not to the stage itself.
+   * Finds the innermost stage containing the node. A warning is attached to the node where it
+   * occurred, which can be anywhere inside the stage, and not to the stage itself.
    */
   private static Stage enclosingStage(FlowNode node, Map<String, Stage> stages) {
     Stage stage = stages.get(node.getId());
