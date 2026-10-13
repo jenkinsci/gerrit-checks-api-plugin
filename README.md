@@ -172,7 +172,11 @@ because a `when` condition was not met or because an earlier stage failed, are
 not reported at all.
 
 A stage that is reported as a check run of its own carries the same result of
-its own, and is `RUNNING` until the stage has finished.
+its own, and is `RUNNING` until the stage has finished. Only the newest build of
+a job reports its stages: Gerrit shows the run of a check whose attempt is the
+highest, so the stage of a build that a rerun replaced would be reported as the
+current stage of that name, and it would stay there for a stage the build that
+replaced it no longer has.
 
 Stages that share a name have to be told apart, since the name is what the
 result shows. Stages of a parallel branch are named after their branch

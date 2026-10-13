@@ -26,6 +26,8 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -37,6 +39,7 @@ import hudson.model.Result;
 import hudson.model.Run;
 import hudson.model.StringParameterValue;
 import hudson.util.RunList;
+import io.jenkins.plugins.gerritchecksapi.rest.AbstractCheckRunFactory;
 import io.jenkins.plugins.gerritchecksapi.rest.CheckRun;
 import io.jenkins.plugins.gerritchecksapi.rest.GerritMultiBranchCheckRunFactory;
 import io.jenkins.plugins.gerritchecksapi.rest.GerritTriggerCheckRunFactory;
@@ -53,6 +56,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
+import org.mockito.MockedStatic;
 import org.mockito.MockitoAnnotations;
 
 @SuppressWarnings({"rawtypes", "unchecked"})
@@ -613,6 +617,94 @@ class DirectCheckRunCollectorTest {
 
     // gerrit-code-review factory should receive run.getNumber() (=7) as attempt
     verify(multiBranchFactory).create(any(), any(), eq(run), eq(7));
+  }
+
+  @Test
+  void collectFor_ofTheNewestBuildOnly_asksForItsStages() {
+    when(jenkins.getPlugin("gerrit-trigger")).thenReturn(mock(hudson.Plugin.class));
+    when(jenkins.getPlugin("gerrit-code-review")).thenReturn(null);
+
+    Job job = mockJob("trigger-job", "trigger-job");
+    Run replaced = mockRun("trigger-job", 4, job);
+    Run newest = mockRun("trigger-job", 5, job);
+
+    when(manager.getHits(anyString(), anyBoolean()))
+        .thenReturn(
+            List.of(
+                mockHit("trigger-job", "trigger-job#4"),
+                mockHit("trigger-job", "trigger-job#5")));
+    when(jenkins.getItemByFullName("trigger-job", Job.class)).thenReturn(job);
+    when(job.getBuild("4")).thenReturn(replaced);
+    when(job.getBuild("5")).thenReturn(newest);
+    when(triggerFactory.create(any(), any(), any(), anyInt()))
+        .thenReturn(createPlainCheckRun(1, 1, "trigger-job#5"));
+
+    try (MockedStatic<AbstractCheckRunFactory> factory = mockStatic(AbstractCheckRunFactory.class)) {
+      factory
+          .when(
+              () ->
+                  AbstractCheckRunFactory.computeStageCheckRuns(
+                      any(), any(), any(), any(), any()))
+          .thenReturn(Collections.singletonList(createPlainCheckRun(1, 1, "stage")));
+
+      collector.collectFor(PatchSetId.create(1, 1));
+
+      // The stage of the build a rerun replaced would be reported as the current
+      // stage of its name, of a stage the build that replaced it does not have.
+      factory.verify(
+          () ->
+              AbstractCheckRunFactory.computeStageCheckRuns(
+                  any(), any(), any(), any(), any()),
+          times(1));
+      factory.verify(
+          () ->
+              AbstractCheckRunFactory.computeStageCheckRuns(
+                  any(), any(), eq(newest), any(), any()));
+    }
+  }
+
+  @Test
+  void collectFor_gerritMultiBranch_asksForTheStagesOfTheNewestBuildOnly() {
+    when(jenkins.getPlugin("gerrit-trigger")).thenReturn(null);
+    when(jenkins.getPlugin("gerrit-code-review")).thenReturn(mock(hudson.Plugin.class));
+
+    Job job = mockJob("mbp/branch", "mbp");
+    Run older = mockRun("mbp/branch", 5, job);
+    Run newest = mockRun("mbp/branch", 7, job);
+
+    when(manager.getHits(anyString(), anyBoolean()))
+        .thenReturn(
+            List.of(
+                mockHit("mbp/branch", "mbp/branch#7"),
+                mockHit("mbp/branch", "mbp/branch#5")));
+    when(jenkins.getItemByFullName("mbp/branch", Job.class)).thenReturn(job);
+    when(job.getBuild("5")).thenReturn(older);
+    when(job.getBuild("7")).thenReturn(newest);
+    when(multiBranchFactory.create(any(), any(), any(), anyInt()))
+        .thenReturn(createPlainCheckRun(1, 1, "mbp/branch#7"));
+
+    try (MockedStatic<AbstractCheckRunFactory> factory = mockStatic(AbstractCheckRunFactory.class)) {
+      factory
+          .when(
+              () ->
+                  AbstractCheckRunFactory.computeStageCheckRuns(
+                      any(), any(), any(), any(), any()))
+          .thenReturn(Collections.singletonList(createPlainCheckRun(1, 1, "stage")));
+
+      collector.collectFor(PatchSetId.create(42, 3));
+
+      // The builds of a multibranch job are not handed over in order, the newest
+      // one is the one with the highest number.
+      factory.verify(
+          () ->
+              AbstractCheckRunFactory.computeStageCheckRuns(
+                  any(), any(), any(), any(), any()),
+          times(1));
+      factory.verify(
+          () ->
+              AbstractCheckRunFactory.computeStageCheckRuns(
+                  any(), any(), eq(newest), any(), any()));
+    }
   }
 
   @Test
