@@ -23,6 +23,7 @@ import hudson.model.Queue;
 import hudson.model.Run;
 import hudson.security.ACL;
 import hudson.security.ACLContext;
+import io.jenkins.plugins.gerritchecksapi.rest.GerritTriggerRerunAction;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import jenkins.model.Jenkins;
@@ -53,7 +54,7 @@ public class DownstreamRetriggerAction implements Action {
 
   @Override
   public String getUrlName() {
-    return "gerrit-trigger-retrigger-this";
+    return GerritTriggerRerunAction.NAME;
   }
 
   @RequirePOST
