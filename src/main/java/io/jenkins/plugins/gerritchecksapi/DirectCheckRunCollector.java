@@ -113,7 +113,10 @@ public class DirectCheckRunCollector implements CheckRunCollector {
           Run run = runs.get(i);
           CheckRun checkRun = gerritTriggerCheckRunFactory.create(ps, run.getParent(), run, i + 1);
           checks.add(checkRun);
-          addStageCheckRuns(ps, run, checkRun, entry.getKey(), stageCheckRuns);
+          // The runs are ordered by their build number, the last one is the newest.
+          if (i == runs.size() - 1) {
+            addStageCheckRuns(ps, run, checkRun, entry.getKey(), stageCheckRuns);
+          }
         }
         checkRuns.put(entry.getKey(), checks);
       }
@@ -155,11 +158,14 @@ public class DirectCheckRunCollector implements CheckRunCollector {
       Map<Job<?, ?>, List<CheckRun>> checkRuns = new HashMap<>();
       for (Map.Entry<Job<?, ?>, List<Run>> entry : runs.entrySet()) {
         List<CheckRun> checks = new ArrayList<>();
+        int newestBuild = newestBuildOf(entry.getValue());
         for (Run run : entry.getValue()) {
           CheckRun checkRun =
               gerritMultiBranchCheckRunFactory.create(ps, run.getParent(), run, run.getNumber());
           checks.add(checkRun);
-          addStageCheckRuns(ps, run, checkRun, entry.getKey(), stageCheckRuns);
+          if (run.getNumber() == newestBuild) {
+            addStageCheckRuns(ps, run, checkRun, entry.getKey(), stageCheckRuns);
+          }
         }
         checkRuns.put(entry.getKey(), checks);
       }
@@ -171,6 +177,12 @@ public class DirectCheckRunCollector implements CheckRunCollector {
    * Collects the check runs of the stages of a Pipeline build, for the builds whose stages are
    * reported as check runs of their own. They are kept aside until the whole run has been
    * collected, see {@link #collectFor}.
+   *
+   * <p>Only the newest build of a job is asked for them. Gerrit shows the run of a check whose
+   * attempt is the highest, so a stage of a build that a rerun replaced would be the one reported
+   * as the current stage of that name — and it stays there, the stage not being part of the build
+   * that replaced it, which is the case a pipeline reports by renaming the stage or by leaving it
+   * out.
    */
   private void addStageCheckRuns(
       PatchSetId ps,
@@ -185,6 +197,11 @@ public class DirectCheckRunCollector implements CheckRunCollector {
     }
   }
 
+  /** The number of the build of a job that was run last. */
+  @SuppressWarnings("rawtypes")
+  private static int newestBuildOf(List<Run> runs) {
+    return runs.stream().mapToInt(Run::getNumber).max().orElse(0);
+  }
   private String absoluteRunUrl(Run<?, ?> run) {
     return String.format("%s%s", jenkins.getRootUrl(), run.getUrl());
   }
