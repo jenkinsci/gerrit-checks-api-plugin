@@ -135,6 +135,14 @@ public class CheckRun {
     this.status = status;
   }
 
+  /**
+   * Whether the run has not finished yet, i.e. whether Jenkins is building it or still has to. What
+   * a run reports changes while it is being built, the stages of a Pipeline build in particular.
+   */
+  public boolean isBuilding() {
+    return status == RunStatus.RUNNING || status == RunStatus.SCHEDULED;
+  }
+
   public String getStatusDescription() {
     return statusDescription;
   }
