@@ -198,11 +198,9 @@ public class DirectCheckRunCollector implements CheckRunCollector {
         if (job == null) {
           throw new IllegalStateException("Couldn't find project returned by index query: " + hit.getProjectName());
         }
+        // Lucene returns Run.getUrl(); the display name is not a build identifier.
         final List<String> urlSegments = Arrays.asList(hit.getSearchUrl().split("/"));
         var buildNumber = urlSegments.get(urlSegments.size() - 1);
-        if (hit.getSearchName().contains("#")) {
-          buildNumber = hit.getSearchName().split("#")[1];
-        }
         Run run = job.getBuild(buildNumber);
         if (run == null) {
           throw new IllegalStateException(String.format("Couldn't find build %s for job %s returned by index query: ", hit.getSearchName(), job.getFullName()));
