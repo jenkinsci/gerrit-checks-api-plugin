@@ -49,6 +49,8 @@ import org.jenkinsci.plugins.lucene.search.FreeTextSearchItemImplementation;
 import org.jenkinsci.plugins.lucene.search.databackend.SearchBackendManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
@@ -153,6 +155,37 @@ class DirectCheckRunCollectorTest {
   }
 
   // --- tests ---
+
+  @ParameterizedTest
+  @CsvSource({
+      "trigger-job, #2005",
+      "trigger-job, #2005 example-project",
+      "trigger-job, example-project",
+      "folder/trigger-job, #2005",
+      "folder/trigger-job, #2005 example-project",
+      "folder/trigger-job, example-project"
+  })
+  void collectFor_displayNameDoesNotAffectBuildLookup(String projectName, String displayName) {
+    when(jenkins.getPlugin("gerrit-trigger")).thenReturn(mock(hudson.Plugin.class));
+    Job job = mockJob(projectName, "trigger-job");
+    Run run = mockRun(projectName, 2005, job);
+    when(jenkins.getItemByFullName(projectName, Job.class)).thenReturn(job);
+    when(job.getBuild("2005")).thenReturn(run);
+
+    // Lucene returns project full name + display name, and the numeric Run.getUrl().
+    FreeTextSearchItemImplementation hit = new FreeTextSearchItemImplementation(
+        projectName + displayName, projectName, new String[0],
+        "job/" + projectName.replace("/", "/job/") + "/2005/", false);
+    when(manager.getHits(anyString(), anyBoolean())).thenReturn(List.of(hit));
+    CheckRun checkRun = createPlainCheckRun(1, 1, projectName + "#2005");
+    when(triggerFactory.create(any(), eq(job), eq(run), eq(1))).thenReturn(checkRun);
+
+    Map<Job<?, ?>, List<CheckRun>> result = collector.collectFor(PatchSetId.create(1, 1));
+
+    assertEquals(Map.of(job, List.of(checkRun)), result);
+    verify(triggerFactory).create(any(), eq(job), eq(run), eq(1));
+    verify(job).getBuild("2005");
+  }
 
   @Test
   void collectFor_noPluginsInstalled_returnsEmpty() {
