@@ -302,6 +302,10 @@ than creating a duplicate entry.
 
 - Only the most recent 100 builds per job are scanned for downstream
   relationships.
+- A build that cannot be loaded, e.g. because its `build.xml` is corrupt, leaves
+  out itself and the older builds of its job rather than failing the request:
+  the newer builds are already seen, and one unreadable build must not take the
+  checks of every change down with it.
 - Traversal depth is capped at 10 levels.
 - Downstream builds have no rerun action, since the trigger chain cannot be
   reconstructed through Jenkins' rerun mechanism.

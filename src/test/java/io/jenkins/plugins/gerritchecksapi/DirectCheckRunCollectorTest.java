@@ -25,6 +25,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.times;
@@ -746,9 +747,9 @@ class DirectCheckRunCollectorTest {
   }
 
   @Test
-  void queryRuns_jobNotFoundByLucene_throwsIllegalStateException() {
-    // This test verifies the error path when the lucene index is stale:
-    // a hit references a project that no longer exists.
+  void queryRuns_jobNotFoundByLucene_isSkipped() {
+    // A hit of a project that no longer exists costs its own run and nothing else: failing
+    // the request over it would leave the change without a single check.
     when(jenkins.getPlugin("gerrit-trigger")).thenReturn(mock(hudson.Plugin.class));
     when(jenkins.getPlugin("gerrit-code-review")).thenReturn(null);
 
@@ -756,12 +757,13 @@ class DirectCheckRunCollectorTest {
         .thenReturn(Collections.singletonList(mockHit("ghost-job", "ghost-job#1")));
     when(jenkins.getItemByFullName("ghost-job", Job.class)).thenReturn(null);
 
-    assertThrows(IllegalStateException.class,
-        () -> collector.collectFor(PatchSetId.create(1, 1)));
+    Map<Job<?, ?>, List<CheckRun>> result = collector.collectFor(PatchSetId.create(1, 1));
+
+    assertTrue(result.isEmpty());
   }
 
   @Test
-  void queryRuns_buildNotFoundByLucene_throwsIllegalStateException() {
+  void queryRuns_buildNotFoundByLucene_isSkipped() {
     // Lucene hit references a build that no longer exists (stale index).
     when(jenkins.getPlugin("gerrit-trigger")).thenReturn(mock(hudson.Plugin.class));
     when(jenkins.getPlugin("gerrit-code-review")).thenReturn(null);
@@ -772,7 +774,75 @@ class DirectCheckRunCollectorTest {
     when(jenkins.getItemByFullName("real-job", Job.class)).thenReturn(job);
     when(job.getBuild("99")).thenReturn(null);
 
-    assertThrows(IllegalStateException.class,
-        () -> collector.collectFor(PatchSetId.create(1, 1)));
+    Map<Job<?, ?>, List<CheckRun>> result = collector.collectFor(PatchSetId.create(1, 1));
+
+    assertTrue(result.isEmpty());
+  }
+
+  @Test
+  void queryRuns_buildThatCannotBeLoaded_isSkipped() {
+    // A build whose build.xml is corrupt throws while it is loaded instead of being
+    // returned; the other runs of the patchset are still collected.
+    when(jenkins.getPlugin("gerrit-trigger")).thenReturn(mock(hudson.Plugin.class));
+    when(jenkins.getPlugin("gerrit-code-review")).thenReturn(null);
+
+    Job badJob = mockJob("mend-report", "mend-report");
+    Job goodJob = mockJob("real-job", "real-job");
+    Run goodRun = mockRun("real-job", 7, goodJob);
+
+    when(manager.getHits(anyString(), anyBoolean()))
+        .thenReturn(List.of(
+            mockHit("mend-report", "mend-report#160"),
+            mockHit("real-job", "real-job#7")));
+    when(jenkins.getItemByFullName("mend-report", Job.class)).thenReturn(badJob);
+    when(jenkins.getItemByFullName("real-job", Job.class)).thenReturn(goodJob);
+    when(badJob.getBuild("160"))
+        .thenThrow(new IllegalStateException("Possibly corrupt build.xml"));
+    when(goodJob.getBuild("7")).thenReturn(goodRun);
+    when(triggerFactory.create(any(), any(), any(), anyInt()))
+        .thenReturn(createPlainCheckRun(1, 1, "real-job#7"));
+
+    Map<Job<?, ?>, List<CheckRun>> result = collector.collectFor(PatchSetId.create(1, 1));
+
+    assertEquals(1, result.size());
+    assertEquals("real-job#7", result.get(goodJob).get(0).getExternalId());
+  }
+
+  @Test
+  void collectFor_aDownstreamJobWhoseBuildsCannotBeLoaded_isSkipped() {
+    // One unreadable build in a downstream job must not take the other jobs, and the
+    // checks of the patchset, down with it.
+    when(jenkins.getPlugin("gerrit-trigger")).thenReturn(mock(hudson.Plugin.class));
+    when(jenkins.getPlugin("gerrit-code-review")).thenReturn(null);
+
+    Job upstreamJob = mockJob("trigger-job", "trigger-job");
+    Run upstreamRun = mockRun("trigger-job", 5, upstreamJob);
+
+    Job corruptJob = mockJob("mend-report", "mend-report");
+    RunList corruptBuilds = mock(RunList.class);
+    doThrow(new IllegalStateException("Possibly corrupt build.xml"))
+        .when(corruptBuilds).iterator();
+    doReturn(corruptBuilds).when(corruptJob).getBuilds();
+
+    Job downstreamJob = mockJob("downstream-job", "downstream-job");
+    Run downstreamRun = mockRun("downstream-job", 3, downstreamJob);
+    Cause.UpstreamCause downstreamCause = upstreamCause(upstreamRun);
+
+    when(manager.getHits(anyString(), anyBoolean()))
+        .thenReturn(Collections.singletonList(mockHit("trigger-job", "trigger-job#5")));
+    when(jenkins.getItemByFullName("trigger-job", Job.class)).thenReturn(upstreamJob);
+    when(upstreamJob.getBuild("5")).thenReturn(upstreamRun);
+    when(triggerFactory.create(any(), any(), any(), anyInt()))
+        .thenReturn(createPlainCheckRun(1, 1, "trigger-job#5"));
+    when(downstreamRun.getCauses()).thenReturn(Collections.singletonList(downstreamCause));
+    setJobBuilds(downstreamJob, downstreamRun);
+    when(jenkins.getAllItems(Job.class)).
+        thenReturn(List.of(corruptJob, downstreamJob));
+
+    Map<Job<?, ?>, List<CheckRun>> result = collector.collectFor(PatchSetId.create(1, 1));
+
+    assertEquals(2, result.size());
+    assertNotNull(result.get(downstreamJob));
+    assertEquals(1, result.get(downstreamJob).size());
   }
 }

@@ -213,14 +213,32 @@ public class DirectCheckRunCollector implements CheckRunCollector {
         Job job = jenkins
                 .getItemByFullName(hit.getProjectName(), Job.class);
         if (job == null) {
-          throw new IllegalStateException("Couldn't find project returned by index query: " + hit.getProjectName());
+          // The index outlives the jobs it describes: a job that was renamed or deleted
+          // since it was indexed still has its hits. Skipping the hit keeps the other
+          // runs of the patchset, where failing the request would leave the change without
+          // a single check.
+          LOG.warn("Skipping an index hit of project " + hit.getProjectName()
+              + ": the job does not exist any more");
+          continue;
         }
         // Lucene returns Run.getUrl(); the display name is not a build identifier.
         final List<String> urlSegments = Arrays.asList(hit.getSearchUrl().split("/"));
         var buildNumber = urlSegments.get(urlSegments.size() - 1);
-        Run run = job.getBuild(buildNumber);
+        Run run;
+        try {
+          run = job.getBuild(buildNumber);
+        } catch (RuntimeException e) {
+          // The builds of a job are loaded as they are asked for, and one that cannot be
+          // loaded, e.g. because its build.xml is corrupt, throws instead of being returned.
+          LOG.warn(String.format(
+              "Skipping build %s of job %s: it cannot be loaded", buildNumber, job.getFullName()), e);
+          continue;
+        }
         if (run == null) {
-          throw new IllegalStateException(String.format("Couldn't find build %s for job %s returned by index query: ", hit.getSearchName(), job.getFullName()));
+          LOG.warn(String.format(
+              "Skipping an index hit of build %s of job %s: the build does not exist any more",
+              hit.getSearchName(), job.getFullName()));
+          continue;
         }
 
         LOG.debug(String.format("Found job %s build %s with parent %s", job.getFullName(), run.getNumber(), run.getParent()));
@@ -287,28 +305,50 @@ public class DirectCheckRunCollector implements CheckRunCollector {
     Map<String, List<Run<?, ?>>> downstreamMap = new HashMap<>();
     try (ACLContext ctx = ACL.as2(ACL.SYSTEM2)) {
       for (Job<?, ?> job : jenkins.getAllItems(Job.class)) {
-        int count = 0;
-        for (Run<?, ?> run : job.getBuilds()) {
-          if (count++ >= MAX_RECENT_BUILDS_PER_JOB) {
-            break;
-          }
-          if (run == null) {
-            continue;
-          }
-          for (Cause cause : run.getCauses()) {
-            if (cause instanceof Cause.UpstreamCause) {
-              Cause.UpstreamCause uc = (Cause.UpstreamCause) cause;
-              String upstreamKey =
-                  uc.getUpstreamProject() + "#" + uc.getUpstreamBuild();
-              downstreamMap
-                  .computeIfAbsent(upstreamKey, k -> new ArrayList<>())
-                  .add(run);
-            }
-          }
-        }
+        collectDownstreamsOf(job, downstreamMap);
       }
     }
     return downstreamMap;
+  }
+
+  /**
+   * Adds the builds of the job that an upstream build triggered to the map.
+   *
+   * <p>The builds of a job are loaded as they are iterated, and one that cannot be loaded — a
+   * corrupt build.xml, say — makes the iterator throw instead of returning it. That build and
+   * the older ones of its job are left out rather than failing the whole request: the newer
+   * ones are already in the map, and a single unreadable build anywhere in the instance must
+   * not leave every change without a check.
+   */
+  @SuppressWarnings("rawtypes")
+  private void collectDownstreamsOf(
+      Job<?, ?> job, Map<String, List<Run<?, ?>>> downstreamMap) {
+    try {
+      int count = 0;
+      for (Run<?, ?> run : job.getBuilds()) {
+        if (count++ >= MAX_RECENT_BUILDS_PER_JOB) {
+          break;
+        }
+        if (run == null) {
+          continue;
+        }
+        for (Cause cause : run.getCauses()) {
+          if (cause instanceof Cause.UpstreamCause) {
+            Cause.UpstreamCause uc = (Cause.UpstreamCause) cause;
+            String upstreamKey =
+                uc.getUpstreamProject() + "#" + uc.getUpstreamBuild();
+            downstreamMap
+                .computeIfAbsent(upstreamKey, k -> new ArrayList<>())
+                .add(run);
+          }
+        }
+      }
+    } catch (RuntimeException e) {
+      // The iteration throws where the build that cannot be loaded sits, so the older builds
+      // of this job are left out; the newer ones are already in the map.
+      LOG.warn("Skipping the builds of " + job.getFullName()
+          + " from the one that cannot be loaded", e);
+    }
   }
 
   @SuppressWarnings("rawtypes")
