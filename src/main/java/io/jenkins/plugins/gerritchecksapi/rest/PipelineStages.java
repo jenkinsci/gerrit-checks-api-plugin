@@ -24,8 +24,11 @@ import io.jenkins.plugins.gerritchecksapi.rest.CheckResult.Category;
 import io.jenkins.plugins.gerritchecksapi.rest.CheckRun.RunStatus;
 import io.jenkins.plugins.gerritchecksapi.rest.Link.LinkIcon;
 import java.time.Instant;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -44,7 +47,6 @@ import org.jenkinsci.plugins.workflow.graph.BlockEndNode;
 import org.jenkinsci.plugins.workflow.graph.BlockStartNode;
 import org.jenkinsci.plugins.workflow.graph.FlowGraphWalker;
 import org.jenkinsci.plugins.workflow.graph.FlowNode;
-import org.jenkinsci.plugins.workflow.graphanalysis.DepthFirstScanner;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 
 /**
@@ -300,7 +302,31 @@ public final class PipelineStages {
     if (execution == null) {
       return Collections.emptyList();
     }
-    return new DepthFirstScanner().allNodes(execution);
+    // The graph of a build that is still running is written as it is walked: a head, and a parent
+    // reached from one, can be a node that is not stored yet, which the execution answers with
+    // null. Walk the parents here rather than through DepthFirstScanner, which hands the null
+    // ones to the scanner — setHeads pushes them into an ArrayDeque, and getParents() is then
+    // called on them — and leave them out: what cannot be read this time is read next time.
+    // The stages are sorted by their creation order afterwards, so the order walked here is not
+    // the order they are reported in.
+    List<FlowNode> nodes = new ArrayList<>();
+    Set<String> seen = new HashSet<>();
+    Deque<FlowNode> pending = new ArrayDeque<>();
+    for (FlowNode head : execution.getCurrentHeads()) {
+      if (head != null && seen.add(head.getId())) {
+        pending.push(head);
+      }
+    }
+    while (!pending.isEmpty()) {
+      FlowNode node = pending.pop();
+      nodes.add(node);
+      for (FlowNode parent : node.getParents()) {
+        if (parent != null && seen.add(parent.getId())) {
+          pending.push(parent);
+        }
+      }
+    }
+    return nodes;
   }
 
   /**
