@@ -44,6 +44,7 @@ import org.jenkinsci.plugins.workflow.graph.BlockEndNode;
 import org.jenkinsci.plugins.workflow.graph.BlockStartNode;
 import org.jenkinsci.plugins.workflow.graph.FlowGraphWalker;
 import org.jenkinsci.plugins.workflow.graph.FlowNode;
+import org.jenkinsci.plugins.workflow.graphanalysis.DepthFirstScanner;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 
 /**
@@ -296,17 +297,10 @@ public final class PipelineStages {
   }
 
   static List<FlowNode> walk(FlowExecution execution) {
-    List<FlowNode> nodes = new ArrayList<>();
-    try {
-      for (FlowNode node : new FlowGraphWalker(execution)) {
-        nodes.add(node);
-      }
-    } catch (NullPointerException e) {
-      // The graph of a build that is still running is written as it is walked: a node the walk
-      // has reached can be one that is not stored yet, which the walker reads as a null parent.
-      // The stages seen so far are reported, and the next poll reports the rest.
+    if (execution == null) {
+      return Collections.emptyList();
     }
-    return nodes;
+    return new DepthFirstScanner().allNodes(execution);
   }
 
   /**
@@ -346,10 +340,6 @@ public final class PipelineStages {
   private static boolean isSkipped(FlowNode node) {
     String status = TagsAction.getTagValue(node, STAGE_STATUS_TAG);
     return status != null && status.startsWith(SKIPPED_TAG_PREFIX);
-  }
-
-  private static Set<String> findFinishedStages(List<FlowNode> nodes) {
-    return findFinishedStages(nodes, new HashMap<>());
   }
 
   /**
@@ -435,7 +425,7 @@ public final class PipelineStages {
       return null;
     }
     BlockStartNode start = ((BlockEndNode<?>) node).getStartNode();
-    return start == null ? null : stagesById.get(start.getId());
+    return stagesById.get(start.getId());
   }
 
   /**
