@@ -25,7 +25,10 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -37,6 +40,7 @@ import hudson.model.Result;
 import hudson.model.Run;
 import hudson.model.StringParameterValue;
 import hudson.util.RunList;
+import io.jenkins.plugins.gerritchecksapi.rest.AbstractCheckRunFactory;
 import io.jenkins.plugins.gerritchecksapi.rest.CheckRun;
 import io.jenkins.plugins.gerritchecksapi.rest.GerritMultiBranchCheckRunFactory;
 import io.jenkins.plugins.gerritchecksapi.rest.GerritTriggerCheckRunFactory;
@@ -53,6 +57,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
+import org.mockito.MockedStatic;
 import org.mockito.MockitoAnnotations;
 
 @SuppressWarnings({"rawtypes", "unchecked"})
@@ -616,6 +621,94 @@ class DirectCheckRunCollectorTest {
   }
 
   @Test
+  void collectFor_ofTheNewestBuildOnly_asksForItsStages() {
+    when(jenkins.getPlugin("gerrit-trigger")).thenReturn(mock(hudson.Plugin.class));
+    when(jenkins.getPlugin("gerrit-code-review")).thenReturn(null);
+
+    Job job = mockJob("trigger-job", "trigger-job");
+    Run replaced = mockRun("trigger-job", 4, job);
+    Run newest = mockRun("trigger-job", 5, job);
+
+    when(manager.getHits(anyString(), anyBoolean()))
+        .thenReturn(
+            List.of(
+                mockHit("trigger-job", "trigger-job#4"),
+                mockHit("trigger-job", "trigger-job#5")));
+    when(jenkins.getItemByFullName("trigger-job", Job.class)).thenReturn(job);
+    when(job.getBuild("4")).thenReturn(replaced);
+    when(job.getBuild("5")).thenReturn(newest);
+    when(triggerFactory.create(any(), any(), any(), anyInt()))
+        .thenReturn(createPlainCheckRun(1, 1, "trigger-job#5"));
+
+    try (MockedStatic<AbstractCheckRunFactory> factory = mockStatic(AbstractCheckRunFactory.class)) {
+      factory
+          .when(
+              () ->
+                  AbstractCheckRunFactory.computeStageCheckRuns(
+                      any(), any(), any(), any(), any()))
+          .thenReturn(Collections.singletonList(createPlainCheckRun(1, 1, "stage")));
+
+      collector.collectFor(PatchSetId.create(1, 1));
+
+      // The stage of the build a rerun replaced would be reported as the current
+      // stage of its name, of a stage the build that replaced it does not have.
+      factory.verify(
+          () ->
+              AbstractCheckRunFactory.computeStageCheckRuns(
+                  any(), any(), any(), any(), any()),
+          times(1));
+      factory.verify(
+          () ->
+              AbstractCheckRunFactory.computeStageCheckRuns(
+                  any(), any(), eq(newest), any(), any()));
+    }
+  }
+
+  @Test
+  void collectFor_gerritMultiBranch_asksForTheStagesOfTheNewestBuildOnly() {
+    when(jenkins.getPlugin("gerrit-trigger")).thenReturn(null);
+    when(jenkins.getPlugin("gerrit-code-review")).thenReturn(mock(hudson.Plugin.class));
+
+    Job job = mockJob("mbp/branch", "mbp");
+    Run older = mockRun("mbp/branch", 5, job);
+    Run newest = mockRun("mbp/branch", 7, job);
+
+    when(manager.getHits(anyString(), anyBoolean()))
+        .thenReturn(
+            List.of(
+                mockHit("mbp/branch", "mbp/branch#7"),
+                mockHit("mbp/branch", "mbp/branch#5")));
+    when(jenkins.getItemByFullName("mbp/branch", Job.class)).thenReturn(job);
+    when(job.getBuild("5")).thenReturn(older);
+    when(job.getBuild("7")).thenReturn(newest);
+    when(multiBranchFactory.create(any(), any(), any(), anyInt()))
+        .thenReturn(createPlainCheckRun(1, 1, "mbp/branch#7"));
+
+    try (MockedStatic<AbstractCheckRunFactory> factory = mockStatic(AbstractCheckRunFactory.class)) {
+      factory
+          .when(
+              () ->
+                  AbstractCheckRunFactory.computeStageCheckRuns(
+                      any(), any(), any(), any(), any()))
+          .thenReturn(Collections.singletonList(createPlainCheckRun(1, 1, "stage")));
+
+      collector.collectFor(PatchSetId.create(42, 3));
+
+      // The builds of a multibranch job are not handed over in order, the newest
+      // one is the one with the highest number.
+      factory.verify(
+          () ->
+              AbstractCheckRunFactory.computeStageCheckRuns(
+                  any(), any(), any(), any(), any()),
+          times(1));
+      factory.verify(
+          () ->
+              AbstractCheckRunFactory.computeStageCheckRuns(
+                  any(), any(), eq(newest), any(), any()));
+    }
+  }
+
+  @Test
   void collectFor_searchBackendManagerNull_throwsMissingDependencyException() {
     when(managerProvider.get()).thenReturn(null);
     when(jenkins.getPlugin("gerrit-trigger")).thenReturn(mock(hudson.Plugin.class));
@@ -654,9 +747,9 @@ class DirectCheckRunCollectorTest {
   }
 
   @Test
-  void queryRuns_jobNotFoundByLucene_throwsIllegalStateException() {
-    // This test verifies the error path when the lucene index is stale:
-    // a hit references a project that no longer exists.
+  void queryRuns_jobNotFoundByLucene_isSkipped() {
+    // A hit of a project that no longer exists costs its own run and nothing else: failing
+    // the request over it would leave the change without a single check.
     when(jenkins.getPlugin("gerrit-trigger")).thenReturn(mock(hudson.Plugin.class));
     when(jenkins.getPlugin("gerrit-code-review")).thenReturn(null);
 
@@ -664,12 +757,13 @@ class DirectCheckRunCollectorTest {
         .thenReturn(Collections.singletonList(mockHit("ghost-job", "ghost-job#1")));
     when(jenkins.getItemByFullName("ghost-job", Job.class)).thenReturn(null);
 
-    assertThrows(IllegalStateException.class,
-        () -> collector.collectFor(PatchSetId.create(1, 1)));
+    Map<Job<?, ?>, List<CheckRun>> result = collector.collectFor(PatchSetId.create(1, 1));
+
+    assertTrue(result.isEmpty());
   }
 
   @Test
-  void queryRuns_buildNotFoundByLucene_throwsIllegalStateException() {
+  void queryRuns_buildNotFoundByLucene_isSkipped() {
     // Lucene hit references a build that no longer exists (stale index).
     when(jenkins.getPlugin("gerrit-trigger")).thenReturn(mock(hudson.Plugin.class));
     when(jenkins.getPlugin("gerrit-code-review")).thenReturn(null);
@@ -680,7 +774,75 @@ class DirectCheckRunCollectorTest {
     when(jenkins.getItemByFullName("real-job", Job.class)).thenReturn(job);
     when(job.getBuild("99")).thenReturn(null);
 
-    assertThrows(IllegalStateException.class,
-        () -> collector.collectFor(PatchSetId.create(1, 1)));
+    Map<Job<?, ?>, List<CheckRun>> result = collector.collectFor(PatchSetId.create(1, 1));
+
+    assertTrue(result.isEmpty());
+  }
+
+  @Test
+  void queryRuns_buildThatCannotBeLoaded_isSkipped() {
+    // A build whose build.xml is corrupt throws while it is loaded instead of being
+    // returned; the other runs of the patchset are still collected.
+    when(jenkins.getPlugin("gerrit-trigger")).thenReturn(mock(hudson.Plugin.class));
+    when(jenkins.getPlugin("gerrit-code-review")).thenReturn(null);
+
+    Job badJob = mockJob("mend-report", "mend-report");
+    Job goodJob = mockJob("real-job", "real-job");
+    Run goodRun = mockRun("real-job", 7, goodJob);
+
+    when(manager.getHits(anyString(), anyBoolean()))
+        .thenReturn(List.of(
+            mockHit("mend-report", "mend-report#160"),
+            mockHit("real-job", "real-job#7")));
+    when(jenkins.getItemByFullName("mend-report", Job.class)).thenReturn(badJob);
+    when(jenkins.getItemByFullName("real-job", Job.class)).thenReturn(goodJob);
+    when(badJob.getBuild("160"))
+        .thenThrow(new IllegalStateException("Possibly corrupt build.xml"));
+    when(goodJob.getBuild("7")).thenReturn(goodRun);
+    when(triggerFactory.create(any(), any(), any(), anyInt()))
+        .thenReturn(createPlainCheckRun(1, 1, "real-job#7"));
+
+    Map<Job<?, ?>, List<CheckRun>> result = collector.collectFor(PatchSetId.create(1, 1));
+
+    assertEquals(1, result.size());
+    assertEquals("real-job#7", result.get(goodJob).get(0).getExternalId());
+  }
+
+  @Test
+  void collectFor_aDownstreamJobWhoseBuildsCannotBeLoaded_isSkipped() {
+    // One unreadable build in a downstream job must not take the other jobs, and the
+    // checks of the patchset, down with it.
+    when(jenkins.getPlugin("gerrit-trigger")).thenReturn(mock(hudson.Plugin.class));
+    when(jenkins.getPlugin("gerrit-code-review")).thenReturn(null);
+
+    Job upstreamJob = mockJob("trigger-job", "trigger-job");
+    Run upstreamRun = mockRun("trigger-job", 5, upstreamJob);
+
+    Job corruptJob = mockJob("mend-report", "mend-report");
+    RunList corruptBuilds = mock(RunList.class);
+    doThrow(new IllegalStateException("Possibly corrupt build.xml"))
+        .when(corruptBuilds).iterator();
+    doReturn(corruptBuilds).when(corruptJob).getBuilds();
+
+    Job downstreamJob = mockJob("downstream-job", "downstream-job");
+    Run downstreamRun = mockRun("downstream-job", 3, downstreamJob);
+    Cause.UpstreamCause downstreamCause = upstreamCause(upstreamRun);
+
+    when(manager.getHits(anyString(), anyBoolean()))
+        .thenReturn(Collections.singletonList(mockHit("trigger-job", "trigger-job#5")));
+    when(jenkins.getItemByFullName("trigger-job", Job.class)).thenReturn(upstreamJob);
+    when(upstreamJob.getBuild("5")).thenReturn(upstreamRun);
+    when(triggerFactory.create(any(), any(), any(), anyInt()))
+        .thenReturn(createPlainCheckRun(1, 1, "trigger-job#5"));
+    when(downstreamRun.getCauses()).thenReturn(Collections.singletonList(downstreamCause));
+    setJobBuilds(downstreamJob, downstreamRun);
+    when(jenkins.getAllItems(Job.class)).
+        thenReturn(List.of(corruptJob, downstreamJob));
+
+    Map<Job<?, ?>, List<CheckRun>> result = collector.collectFor(PatchSetId.create(1, 1));
+
+    assertEquals(2, result.size());
+    assertNotNull(result.get(downstreamJob));
+    assertEquals(1, result.get(downstreamJob).size());
   }
 }

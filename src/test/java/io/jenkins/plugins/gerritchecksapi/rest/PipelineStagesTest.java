@@ -84,6 +84,29 @@ class PipelineStagesTest {
   }
 
   @Test
+  void walk_aHeadThatIsNotStoredYet_isNotAnError() {
+    // The graph of a build that is still running is written as it is walked, so a head can be
+    // a node that is not stored yet.
+    FlowExecution execution = mock(FlowExecution.class);
+    when(execution.getCurrentHeads()).thenReturn(Arrays.asList((FlowNode) null));
+
+    assertTrue(PipelineStages.walk(execution).isEmpty());
+  }
+
+  @Test
+  void walk_aParentThatIsNotStoredYet_isNotAnError() {
+    // And so can a parent reached from a head that was stored: the race goes on while the graph
+    // is navigated, which is why the walk does not hand it to a scanner.
+    FlowExecution execution = mock(FlowExecution.class);
+    FlowNode head = mock(FlowNode.class);
+    when(head.getId()).thenReturn("2");
+    when(head.getParents()).thenReturn(Arrays.asList((FlowNode) null));
+    when(execution.getCurrentHeads()).thenReturn(List.of(head));
+
+    assertEquals(List.of(head), PipelineStages.walk(execution));
+  }
+
+  @Test
   void results_pipelineWithoutExecution_returnsEmpty() {
     WorkflowRun run = mock(WorkflowRun.class);
     when(run.getExecution()).thenReturn(null);
