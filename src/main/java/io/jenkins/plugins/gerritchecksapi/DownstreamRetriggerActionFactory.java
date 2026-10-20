@@ -17,6 +17,7 @@ package io.jenkins.plugins.gerritchecksapi;
 import hudson.Extension;
 import hudson.model.Action;
 import hudson.model.Run;
+import io.jenkins.plugins.gerritchecksapi.rest.GerritTriggerRerunAction;
 import java.util.Collection;
 import java.util.Collections;
 import jenkins.model.TransientActionFactory;
@@ -43,7 +44,7 @@ public class DownstreamRetriggerActionFactory
 
   private static boolean hasExistingRetriggerAction(Run<?, ?> run) {
     for (Action action : run.getActions()) {
-      if ("gerrit-trigger-retrigger-this".equals(action.getUrlName())) {
+      if (GerritTriggerRerunAction.NAME.equals(action.getUrlName())) {
         return true;
       }
     }
