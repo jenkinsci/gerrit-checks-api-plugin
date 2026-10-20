@@ -26,7 +26,15 @@ import java.util.concurrent.TimeUnit;
 
 @Singleton
 public class CachingCheckRunCollector implements CheckRunCollector {
-  private final Cache<PatchSetId, Map<Job<?, ?>, List<CheckRun>>> cache =
+  /**
+   * What was collected for a patchset, so that the polls of the Gerrit UI do not run the search
+   * for every one of them.
+   *
+   * <p>Static, so that a build that starts or finishes can drop the entry of its patchset through
+   * {@link #invalidate(PatchSetId)}: the collector is created by the injector of the REST endpoint,
+   * which a listener of the builds, registered by Jenkins on its own, is not part of.
+   */
+  private static final Cache<PatchSetId, Map<Job<?, ?>, List<CheckRun>>> cache =
       Caffeine.newBuilder().expireAfterWrite(30, TimeUnit.SECONDS).build();
 
   private final CheckRunCollector directCollector;
@@ -38,6 +46,30 @@ public class CachingCheckRunCollector implements CheckRunCollector {
 
   @Override
   public Map<Job<?, ?>, List<CheckRun>> collectFor(PatchSetId ps) {
-    return cache.get(ps, p -> directCollector.collectFor(p));
+    Map<Job<?, ?>, List<CheckRun>> collected = cache.get(ps, p -> directCollector.collectFor(p));
+    if (isBuilding(collected)) {
+      // What a running build reports changes with every stage it goes through, so
+      // what was collected of it is kept only for this poll: the next one is
+      // served the stages the build had reached by then otherwise.
+      cache.invalidate(ps);
+    }
+    return collected;
+  }
+
+  /** Whether any of the collected runs is still building. */
+  private static boolean isBuilding(Map<Job<?, ?>, List<CheckRun>> collected) {
+    return collected.values().stream()
+        .flatMap(List::stream)
+        .anyMatch(CheckRun::isBuilding);
+  }
+
+  /**
+   * Drops what was collected for a patchset, so that the next poll collects it again. A build that
+   * starts is what a patchset reports from then on — the rerun the user is waiting for — and one
+   * that finishes reports the stages it ran last; both would otherwise be served from the
+   * collection made before them until it expires.
+   */
+  public static void invalidate(PatchSetId ps) {
+    cache.invalidate(ps);
   }
 }

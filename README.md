@@ -171,8 +171,24 @@ if it failed and as `INFO` while it is still running. Stages that were skipped,
 because a `when` condition was not met or because an earlier stage failed, are
 not reported at all.
 
+A failure only fails the stage it ended. A step whose failure the pipeline
+caught and carried on from — a probe wrapped in a `try`/`catch`, say — is a
+failure of that step alone, and a `catchError` turns one into the result of the
+stage, so a stage that caught its failure reports what it did with it, e.g. a
+warning. Only when the failure ended the stage does the stage fail with it,
+which also means that a stage that is still running never reports a failure.
+
 A stage that is reported as a check run of its own carries the same result of
-its own, and is `RUNNING` until the stage has finished.
+its own, and is `RUNNING` until the stage has finished. It carries the times of
+the stage as well, and not those of the build: while the stage runs, its end is
+estimated from how long the same stage took in the build before this one, which
+is what Gerrit shows as the ETA of the stage. A stage whose estimate is unknown
+— the first build of a job, or one the pipeline has changed since — reports
+none, rather than an estimate of the whole build for a single stage. Only the
+newest build of a job reports its stages: Gerrit shows the run of a check whose
+attempt is the highest, so the stage of a build that a rerun replaced would be
+reported as the current stage of that name, and it would stay there for a stage
+the build that replaced it no longer has.
 
 Stages that share a name have to be told apart, since the name is what the
 result shows. Stages of a parallel branch are named after their branch
@@ -286,6 +302,10 @@ than creating a duplicate entry.
 
 - Only the most recent 100 builds per job are scanned for downstream
   relationships.
+- A build that cannot be loaded, e.g. because its `build.xml` is corrupt, leaves
+  out itself and the older builds of its job rather than failing the request:
+  the newer builds are already seen, and one unreadable build must not take the
+  checks of every change down with it.
 - Traversal depth is capped at 10 levels.
 - Downstream builds have no rerun action, since the trigger chain cannot be
   reconstructed through Jenkins' rerun mechanism.

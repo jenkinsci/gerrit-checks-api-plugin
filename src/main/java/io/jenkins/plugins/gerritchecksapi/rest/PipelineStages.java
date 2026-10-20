@@ -14,6 +14,8 @@
 
 package io.jenkins.plugins.gerritchecksapi.rest;
 
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import hudson.model.Run;
 import io.jenkins.plugins.gerritchecksapi.PatchSetId;
 import io.jenkins.plugins.gerritchecksapi.StageForm;
@@ -21,18 +23,24 @@ import io.jenkins.plugins.gerritchecksapi.StageReporting;
 import io.jenkins.plugins.gerritchecksapi.rest.CheckResult.Category;
 import io.jenkins.plugins.gerritchecksapi.rest.CheckRun.RunStatus;
 import io.jenkins.plugins.gerritchecksapi.rest.Link.LinkIcon;
+import java.time.Instant;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import jenkins.model.Jenkins;
 import org.jenkinsci.plugins.workflow.actions.ErrorAction;
 import org.jenkinsci.plugins.workflow.actions.LabelAction;
 import org.jenkinsci.plugins.workflow.actions.TagsAction;
 import org.jenkinsci.plugins.workflow.actions.ThreadNameAction;
+import org.jenkinsci.plugins.workflow.actions.TimingAction;
 import org.jenkinsci.plugins.workflow.actions.WarningAction;
 import org.jenkinsci.plugins.workflow.flow.FlowExecution;
 import org.jenkinsci.plugins.workflow.graph.BlockEndNode;
@@ -75,6 +83,17 @@ public final class PipelineStages {
 
   /** Prefix of the names of the stages Jenkins itself adds to a declarative pipeline. */
   private static final String DECLARATIVE_PREFIX = "Declarative: ";
+
+  /** How many builds that are still running are skipped when looking for one that has finished. */
+  private static final int MAX_SKIPPED_BUILDS = 5;
+
+  /**
+   * How long each stage of a finished build took, by the ID of the build. The stages of a finished
+   * build do not change, so what is read from it once is kept until nobody asks for it any more:
+   * walking the graph of a build is what an estimate costs.
+   */
+  private static final Cache<String, Map<String, Long>> STAGE_DURATIONS =
+      Caffeine.newBuilder().expireAfterAccess(1, TimeUnit.HOURS).maximumSize(200).build();
 
   private PipelineStages() {}
 
@@ -131,7 +150,8 @@ public final class PipelineStages {
         run.isBuilding(),
         parent,
         runUrl,
-        reporting);
+        reporting,
+        stageDurationsBefore(run));
   }
 
   static List<CheckRun> checkRuns(
@@ -142,11 +162,72 @@ public final class PipelineStages {
       CheckRun parent,
       String runUrl,
       StageReporting reporting) {
+    return checkRuns(
+        ps, execution, runKey, building, parent, runUrl, reporting, Map.of());
+  }
+
+  static List<CheckRun> checkRuns(
+      PatchSetId ps,
+      FlowExecution execution,
+      String runKey,
+      boolean building,
+      CheckRun parent,
+      String runUrl,
+      StageReporting reporting,
+      Map<String, Long> stageDurationsBefore) {
     List<CheckRun> checkRuns = new ArrayList<>();
     for (Stage stage : reportedStages(execution, building, reporting)) {
-      checkRuns.add(stage.toCheckRun(ps, parent, runKey, runUrl, building));
+      checkRuns.add(
+          stage.toCheckRun(ps, parent, runKey, runUrl, building, stageDurationsBefore));
     }
     return checkRuns;
+  }
+
+  /**
+   * How long each stage took in the newest build of the job before the given one, by the name the
+   * stage is reported with. A stage that is running is estimated with it: what the stage took the
+   * last time the job built is the closest thing to what it will take this time, and a stage of a
+   * pipeline that has changed since does not have one and reports no estimate.
+   */
+  static Map<String, Long> stageDurationsBefore(Run<?, ?> run) {
+    Run<?, ?> previous = previousFinishedBuild(run);
+    if (previous == null) {
+      return Map.of();
+    }
+    return STAGE_DURATIONS.get(
+        previous.getExternalizableId(), id -> stageDurationsOf(previous));
+  }
+
+  /** The newest build of the job before the given one that has finished. */
+  private static Run<?, ?> previousFinishedBuild(Run<?, ?> run) {
+    Run<?, ?> previous = run.getPreviousBuild();
+    for (int i = 0; previous != null && previous.isBuilding() && i < MAX_SKIPPED_BUILDS; i++) {
+      previous = previous.getPreviousBuild();
+    }
+    return previous == null || previous.isBuilding() ? null : previous;
+  }
+
+  private static Map<String, Long> stageDurationsOf(Run<?, ?> run) {
+    if (!(run instanceof WorkflowRun)) {
+      return Map.of();
+    }
+    FlowExecution execution = ((WorkflowRun) run).getExecution();
+    if (execution == null) {
+      return Map.of();
+    }
+    List<FlowNode> nodes = walk(execution);
+    List<Stage> stages = findStages(nodes);
+    Map<String, Long> endedAt = new HashMap<>();
+    findFinishedStages(nodes, endedAt);
+    nameStages(stages);
+    Map<String, Long> durations = new HashMap<>();
+    for (Stage stage : stages) {
+      long end = endedAt.getOrDefault(stage.id(), -1L);
+      if (stage.startedAt > 0 && end > stage.startedAt) {
+        durations.put(stage.checkName, end - stage.startedAt);
+      }
+    }
+    return durations;
   }
 
   /**
@@ -168,20 +249,22 @@ public final class PipelineStages {
       return List.of();
     }
     List<FlowNode> nodes = walk(execution);
-    List<Stage> stages = findStages(nodes);
-    if (stages.isEmpty()) {
+    List<Stage> allStages = findStages(nodes);
+    if (allStages.isEmpty()) {
       return List.of();
     }
-    stages = applyReportingSettings(stages, reporting);
+    List<Stage> stages = applyReportingSettings(allStages, reporting);
     if (stages.isEmpty()) {
       return List.of();
     }
     // Errors of stages that are not reported are attributed to the stage enclosing
     // them, if there is one.
-    collectFailures(nodes, stages);
-    Set<String> finishedStages = findFinishedStages(nodes);
+    collectFailures(nodes, allStages, stages);
+    Map<String, Long> endedAt = new HashMap<>();
+    Set<String> finishedStages = findFinishedStages(nodes, endedAt);
     for (Stage stage : stages) {
       stage.finished = finishedStages.contains(stage.id());
+      stage.endedAt = endedAt.getOrDefault(stage.id(), -1L);
     }
     nameStages(stages);
     return stages;
@@ -215,10 +298,33 @@ public final class PipelineStages {
     return stagesById;
   }
 
-  private static List<FlowNode> walk(FlowExecution execution) {
+  static List<FlowNode> walk(FlowExecution execution) {
+    if (execution == null) {
+      return Collections.emptyList();
+    }
+    // The graph of a build that is still running is written as it is walked: a head, and a parent
+    // reached from one, can be a node that is not stored yet, which the execution answers with
+    // null. Walk the parents here rather than through DepthFirstScanner, which hands the null
+    // ones to the scanner — setHeads pushes them into an ArrayDeque, and getParents() is then
+    // called on them — and leave them out: what cannot be read this time is read next time.
+    // The stages are sorted by their creation order afterwards, so the order walked here is not
+    // the order they are reported in.
     List<FlowNode> nodes = new ArrayList<>();
-    for (FlowNode node : new FlowGraphWalker(execution)) {
+    Set<String> seen = new HashSet<>();
+    Deque<FlowNode> pending = new ArrayDeque<>();
+    for (FlowNode head : execution.getCurrentHeads()) {
+      if (head != null && seen.add(head.getId())) {
+        pending.push(head);
+      }
+    }
+    while (!pending.isEmpty()) {
+      FlowNode node = pending.pop();
       nodes.add(node);
+      for (FlowNode parent : node.getParents()) {
+        if (parent != null && seen.add(parent.getId())) {
+          pending.push(parent);
+        }
+      }
     }
     return nodes;
   }
@@ -262,28 +368,72 @@ public final class PipelineStages {
     return status != null && status.startsWith(SKIPPED_TAG_PREFIX);
   }
 
-  private static Set<String> findFinishedStages(List<FlowNode> nodes) {
+  /**
+   * The IDs of the stages that have finished, and when they did.
+   *
+   * <p>A stage ends with the node its block ends with, whose timing is the time the block ended:
+   * a flow node carries a {@link TimingAction} for the time it was created, and the node that ends
+   * a block is created when that block is over.
+   */
+  private static Set<String> findFinishedStages(List<FlowNode> nodes, Map<String, Long> endedAt) {
     Set<String> finished = new HashSet<>();
     for (FlowNode node : nodes) {
       if (node instanceof BlockEndNode) {
         BlockStartNode start = ((BlockEndNode<?>) node).getStartNode();
         if (start != null) {
           finished.add(start.getId());
+          long endTime = TimingAction.getStartTime(node);
+          if (endTime > 0) {
+            endedAt.put(start.getId(), endTime);
+          }
         }
       }
     }
     return finished;
   }
 
-  private static void collectFailures(List<FlowNode> nodes, List<Stage> stages) {
-    Map<String, Stage> stagesById = indexById(stages);
+  /**
+   * Collects the failures the stages report.
+   *
+   * <p>An error only fails the stage it ended. A step whose failure the pipeline caught and
+   * carried on from — a probe wrapped in a try/catch, say — and one that a {@code catchError}
+   * turned into a warning leave the error on the node the failure was caught in, while a stage
+   * that failed records it on its own end node. A stage that has an error of that kind is
+   * therefore also a stage that has finished, and a stage that is still running never reports a
+   * failure. Warnings are taken wherever they are: a warning is the result the pipeline left the
+   * build with, and it cannot carry on from it.
+   *
+   * <p>A stage that is not reported, e.g. because of the stage depth setting, hands its failure to
+   * the enclosing stage, so that a nested stage that failed still fails the one the reviewer sees.
+   *
+   * @param allStages the stages of the run, reported or not
+   * @param stages the stages that are reported, which the failures are attributed to
+   */
+  private static void collectFailures(
+      List<FlowNode> nodes, List<Stage> allStages, List<Stage> stages) {
+    Map<String, Stage> allById = indexById(allStages);
+    Map<String, Stage> reportedById = indexById(stages);
     for (FlowNode node : nodes) {
       ErrorAction error = node.getPersistentAction(ErrorAction.class);
       WarningAction warning = node.getPersistentAction(WarningAction.class);
       if (error == null && warning == null) {
         continue;
       }
-      Stage stage = enclosingStage(node, stagesById);
+      // The stage the error ended, if there is one: it is not among the blocks enclosing its
+      // own end node, which is where the walk below starts.
+      Stage ended = error == null ? null : endedStage(node, allById);
+      if (error != null && ended == null) {
+        error = null;
+      }
+      if (error == null && warning == null) {
+        continue;
+      }
+      // The stage the failure is reported on: the one it ended, and the stage enclosing it
+      // when that one is not reported, e.g. because of the stage depth setting.
+      Stage stage =
+          ended != null && reportedById.containsKey(ended.id())
+              ? ended
+              : enclosingStage(node, reportedById);
       if (stage == null) {
         continue;
       }
@@ -295,9 +445,18 @@ public final class PipelineStages {
     }
   }
 
+  /** The stage the node ends, or null when it does not end one. */
+  private static Stage endedStage(FlowNode node, Map<String, Stage> stagesById) {
+    if (!(node instanceof BlockEndNode)) {
+      return null;
+    }
+    BlockStartNode start = ((BlockEndNode<?>) node).getStartNode();
+    return stagesById.get(start.getId());
+  }
+
   /**
-   * Finds the innermost stage containing the node. Errors and warnings are attached to the node
-   * where they occurred, which can be anywhere inside the stage, and not to the stage itself.
+   * Finds the innermost stage containing the node. A warning is attached to the node where it
+   * occurred, which can be anywhere inside the stage, and not to the stage itself.
    */
   private static Stage enclosingStage(FlowNode node, Map<String, Stage> stages) {
     Stage stage = stages.get(node.getId());
@@ -341,14 +500,19 @@ public final class PipelineStages {
   private static final class Stage {
     private final BlockStartNode node;
     private final String baseName;
+    /** When the stage started, from the timing of its node; -1 when it has none. */
+    private final long startedAt;
     private String checkName;
     private boolean finished;
+    /** When the stage ended, from the timing of the node it ended with; -1 when it has none. */
+    private long endedAt = -1;
     private ErrorAction error;
     private WarningAction warning;
 
     private Stage(BlockStartNode node) {
       this.node = node;
       this.baseName = qualify(nameOf(node), branchOf(node));
+      this.startedAt = TimingAction.getStartTime(node);
     }
 
     /** Names the stage after the parallel branch it runs in, if it runs in one. */
@@ -433,7 +597,12 @@ public final class PipelineStages {
     }
 
     private CheckRun toCheckRun(
-        PatchSetId ps, CheckRun parent, String runKey, String runUrl, boolean building) {
+        PatchSetId ps,
+        CheckRun parent,
+        String runKey,
+        String runUrl,
+        boolean building,
+        Map<String, Long> stageDurationsBefore) {
       CheckRun checkRun = new CheckRun();
       checkRun.setChange(ps.changeId());
       checkRun.setPatchSet(ps.patchSetNumber());
@@ -450,11 +619,34 @@ public final class PipelineStages {
       // The check run of the build carries the actions, e.g. the one to rerun it.
       checkRun.setActions(List.of());
       checkRun.setScheduledTimestamp(parent.getScheduledTimestamp());
-      checkRun.setStartedTimestamp(parent.getStartedTimestamp());
-      checkRun.setFinishedTimestamp(parent.getFinishedTimestamp());
+      // The stage has a start and an end of its own, which the check run of the build does not:
+      // a stage that has not started yet, or one that is being read from a graph that does not
+      // time it, keeps the timestamps of the build.
+      checkRun.setStartedTimestamp(
+          startedAt > 0 ? timestamp(startedAt) : parent.getStartedTimestamp());
+      checkRun.setFinishedTimestamp(finishedTimestamp(parent, stageDurationsBefore));
       checkRun.setResults(
           List.of(computeResult(stageKey(runKey), checkName, runUrl, id(), category(), message())));
       return checkRun;
+    }
+
+    /**
+     * When the stage is expected to end. A stage that has ended reports when it did. One that is
+     * still running is estimated from what the same stage took in the build before this one, so
+     * that the reviewer is not told what is left of the whole build; Gerrit shows the estimate as
+     * an ETA and leaves it out once it has passed. A stage whose estimate is unknown reports none,
+     * rather than one that is known to be wrong.
+     */
+    private String finishedTimestamp(CheckRun parent, Map<String, Long> stageDurationsBefore) {
+      if (finished) {
+        return endedAt > 0 ? timestamp(endedAt) : parent.getFinishedTimestamp();
+      }
+      Long before = stageDurationsBefore.get(checkName);
+      return startedAt > 0 && before != null ? timestamp(startedAt + before) : null;
+    }
+
+    private static String timestamp(long epochMilli) {
+      return Instant.ofEpochMilli(epochMilli).toString();
     }
 
     /**
